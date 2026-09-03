@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type Anthropic from "@anthropic-ai/sdk";
 import { parseIsoDate } from "../core/dates.ts";
+import { currency } from "../core/money.ts";
 import type { Document, DocumentId } from "../core/types.ts";
 import { type ClaudeMessagesClient, createClaudeExtractor } from "./claude.ts";
 
@@ -104,9 +105,9 @@ describe("createClaudeExtractor", () => {
 			kind: "invoice",
 			side: "expense",
 			party: "Acme Vendor",
-			issuedAt: "2026-01-15",
-			total: { minor: 12345, currency: "USD" },
-			tax: { minor: 2345, currency: "USD" },
+			issuedAt: parseIsoDate("2026-01-15"),
+			total: { minor: 12345, currency: currency("USD") },
+			tax: { minor: 2345, currency: currency("USD") },
 			number: "INV-1",
 			category: "software",
 			confidence: 0.9,
