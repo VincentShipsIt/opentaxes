@@ -4,6 +4,7 @@ import type { Auth, drive_v3, sheets_v4 } from "googleapis";
 import { google } from "googleapis";
 import Stripe from "stripe";
 import { createClaudeExtractor } from "../extractors/claude.ts";
+import { createClaudeCliExtractor } from "../extractors/claude-cli.ts";
 import { createDriveSink } from "../sinks/drive.ts";
 import { createFolderSink } from "../sinks/folder.ts";
 import { createSheetsSink } from "../sinks/sheets.ts";
@@ -231,9 +232,39 @@ export function createRegistry(
 		},
 	]);
 
-	const extractor: Extractor | null = env.ANTHROPIC_API_KEY
-		? createClaudeExtractor({ apiKey: env.ANTHROPIC_API_KEY })
-		: null;
+	function buildClaudeApiExtractor(): Extractor {
+		if (!env.ANTHROPIC_API_KEY) {
+			throw new Error(
+				'config.extractor.kind is "claude-api" but ANTHROPIC_API_KEY is not set; set it, or switch to "claude-cli" to use the local Claude Code CLI instead'
+			);
+		}
+		return createClaudeExtractor({
+			apiKey: env.ANTHROPIC_API_KEY,
+			...(config.extractor?.model ? { model: config.extractor.model } : {}),
+		});
+	}
+
+	function buildClaudeCliExtractor(): Extractor {
+		return createClaudeCliExtractor({
+			...(config.extractor?.model ? { model: config.extractor.model } : {}),
+			...(config.extractor?.configDir ? { configDir: config.extractor.configDir } : {}),
+		});
+	}
+
+	const extractorKind = config.extractor?.kind;
+	const extractor: Extractor | null =
+		buildTable<Extractor>([
+			{ when: extractorKind === "claude-api", build: buildClaudeApiExtractor },
+			{ when: extractorKind === "claude-cli", build: buildClaudeCliExtractor },
+			{
+				when: extractorKind === undefined && env.ANTHROPIC_API_KEY !== undefined,
+				build: buildClaudeApiExtractor,
+			},
+			{
+				when: extractorKind === undefined && env.ANTHROPIC_API_KEY === undefined,
+				build: buildClaudeCliExtractor,
+			},
+		])[0] ?? null;
 
 	const sinks = buildTable<Sink>([
 		{

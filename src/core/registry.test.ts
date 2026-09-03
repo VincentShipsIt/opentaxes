@@ -79,9 +79,24 @@ describe("createRegistry", () => {
 		expect(registry.extractor?.name).toBe("claude");
 	});
 
-	it("leaves the extractor null when ANTHROPIC_API_KEY is unset", () => {
+	it("falls back to the claude-cli extractor when ANTHROPIC_API_KEY is unset", () => {
 		const registry = createRegistry(parseConfig({}), parseEnv({}), MONTH);
-		expect(registry.extractor).toBeNull();
+		expect(registry.extractor?.name).toBe("claude-cli");
+	});
+
+	it("uses claude-cli even with a key present when extractor.kind is claude-cli", () => {
+		const registry = createRegistry(
+			parseConfig({ extractor: { kind: "claude-cli" } }),
+			parseEnv({ ANTHROPIC_API_KEY: "sk-ant-fake" }),
+			MONTH
+		);
+		expect(registry.extractor?.name).toBe("claude-cli");
+	});
+
+	it("throws a clear error when extractor.kind is claude-api but the key is missing", () => {
+		expect(() =>
+			createRegistry(parseConfig({ extractor: { kind: "claude-api" } }), parseEnv({}), MONTH)
+		).toThrow(/ANTHROPIC_API_KEY/);
 	});
 
 	it("adds a folder sink when sinks.folder is configured", () => {
