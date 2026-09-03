@@ -4,8 +4,9 @@ import type { Month } from "../core/types.ts";
 
 const MIN_ATTACHMENT_BYTES = 1024;
 
-const DEFAULT_DOCUMENT_TERMS =
-	'has:attachment filename:pdf (invoice OR receipt OR facture OR reçu OR "payment confirmation" OR "order confirmation")';
+const BASE_TERMS = "has:attachment filename:pdf";
+const KEYWORD_TERMS =
+	'(invoice OR receipt OR facture OR reçu OR "payment confirmation" OR "order confirmation")';
 
 /** The subset of the Gmail v1 client (`google.gmail({ version: "v1", auth })`) this source calls. */
 export interface GmailClient {
@@ -75,7 +76,7 @@ export interface GmailAttachmentData {
 
 export interface GmailSourceOptions {
 	readonly gmail: GmailClient;
-	/** Sender addresses or domains known to send invoices, OR'd into the query. */
+	/** Vendors known to send invoices; widens the query (from: OR keyword terms) rather than narrowing it. */
 	readonly senders?: readonly string[];
 	/** Extra Gmail search terms appended verbatim to the default receipt query. */
 	readonly query?: string;
@@ -88,16 +89,21 @@ export interface GmailQueryOptions {
 	readonly query?: string;
 }
 
-/** Pure query builder, scoped to the month and, optionally, known invoice senders. */
+/**
+ * Pure query builder, scoped to the month. A known invoice sender's mail (e.g. "Your bill")
+ * often doesn't contain the keyword terms, so senders widen the match (from: OR keywords)
+ * instead of narrowing it with an AND.
+ */
 export function buildGmailQuery(options: GmailQueryOptions): string {
+	const senders = options.senders ?? [];
+	const matchClause =
+		senders.length > 0 ? `(from:(${senders.join(" OR ")}) OR ${KEYWORD_TERMS})` : KEYWORD_TERMS;
 	const parts = [
-		DEFAULT_DOCUMENT_TERMS,
+		BASE_TERMS,
 		`after:${toGmailDate(firstDayOf(options.month))}`,
 		`before:${toGmailDate(firstDayOfNextMonth(options.month))}`,
+		matchClause,
 	];
-	if (options.senders !== undefined && options.senders.length > 0) {
-		parts.push(`from:(${options.senders.join(" OR ")})`);
-	}
 	if (options.query !== undefined && options.query.length > 0) {
 		parts.push(options.query);
 	}

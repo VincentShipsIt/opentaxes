@@ -21,33 +21,36 @@ import {
 	type GmailMessage,
 } from "./gmail.ts";
 
-const DEFAULT_TERMS =
-	'has:attachment filename:pdf (invoice OR receipt OR facture OR reçu OR "payment confirmation" OR "order confirmation")';
+const BASE_TERMS = "has:attachment filename:pdf";
+const KEYWORD_TERMS =
+	'(invoice OR receipt OR facture OR reçu OR "payment confirmation" OR "order confirmation")';
 
 describe("buildGmailQuery", () => {
 	test("scopes to the month with no senders and no extra query", () => {
 		const query = buildGmailQuery({ month: "2024-01" as Month });
-		expect(query).toBe(`${DEFAULT_TERMS} after:2024/01/01 before:2024/02/01`);
+		expect(query).toBe(`${BASE_TERMS} after:2024/01/01 before:2024/02/01 ${KEYWORD_TERMS}`);
 	});
 
-	test("adds an OR'd from: clause when senders are given", () => {
+	test("widens the match to sender OR keyword terms when senders are given", () => {
 		const query = buildGmailQuery({
 			month: "2024-01" as Month,
 			senders: ["billing@vendor.example", "receipts@shop.example"],
 		});
 		expect(query).toBe(
-			`${DEFAULT_TERMS} after:2024/01/01 before:2024/02/01 from:(billing@vendor.example OR receipts@shop.example)`
+			`${BASE_TERMS} after:2024/01/01 before:2024/02/01 (from:(billing@vendor.example OR receipts@shop.example) OR ${KEYWORD_TERMS})`
 		);
 	});
 
 	test("ignores an empty senders list", () => {
 		const query = buildGmailQuery({ month: "2024-01" as Month, senders: [] });
-		expect(query).toBe(`${DEFAULT_TERMS} after:2024/01/01 before:2024/02/01`);
+		expect(query).toBe(`${BASE_TERMS} after:2024/01/01 before:2024/02/01 ${KEYWORD_TERMS}`);
 	});
 
 	test("appends the caller's extra query verbatim", () => {
 		const query = buildGmailQuery({ month: "2024-01" as Month, query: "-label:archived" });
-		expect(query).toBe(`${DEFAULT_TERMS} after:2024/01/01 before:2024/02/01 -label:archived`);
+		expect(query).toBe(
+			`${BASE_TERMS} after:2024/01/01 before:2024/02/01 ${KEYWORD_TERMS} -label:archived`
+		);
 	});
 
 	test("uses the first day of the next month as the exclusive upper bound, across a year boundary", () => {
