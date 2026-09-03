@@ -1,13 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { extractionJsonSchema, parseExtraction } from "../core/extraction-schema.ts";
-import { currency, moneyFromDecimal } from "../core/money.ts";
 import type { Extractor } from "../core/registry.ts";
-import type { Document, Extraction, Money } from "../core/types.ts";
+import type { Document, Extraction } from "../core/types.ts";
 import { buildExtractionPrompt } from "./prompt.ts";
+import { decimalExtractionJsonSchema, extractionFromDecimalInput } from "./schema.ts";
 
-const DEFAULT_MODEL = "claude-opus-5";
+export const DEFAULT_MODEL = "claude-opus-5";
+export const MAX_ATTEMPTS = 2;
 const TOOL_NAME = "record_extraction";
-const MAX_ATTEMPTS = 2;
 const SUPPORTED_MIMES = ["application/pdf", "image/png", "image/jpeg"] as const;
 
 type SupportedMime = (typeof SUPPORTED_MIMES)[number];
@@ -41,82 +40,12 @@ function documentContentBlock(
 	return { type: "image", source: { type: "base64", media_type: mime, data } };
 }
 
-/**
- * Reuses the canonical JSON schema from extraction-schema.ts, but asks the model for money as a
- * decimal amount plus a currency code rather than pre-computed minor units — a vision model reads
- * a printed total directly, while minor-unit math needs a currency's decimal precision (e.g. JPY
- * has none), which is exactly what `moneyFromDecimal` applies once the amount comes back.
- */
-function toolInputSchema(): Anthropic.Tool.InputSchema {
-	const decimalMoney = {
-		type: "object",
-		properties: {
-			amount: { type: "string", description: 'Decimal amount, e.g. "1234.56".' },
-			currency: { type: "string", description: 'ISO 4217 code, e.g. "USD".' },
-		},
-		required: ["amount", "currency"],
-		additionalProperties: false,
-	};
-	const base = extractionJsonSchema as { properties: Record<string, unknown> };
-	return {
-		type: "object",
-		properties: {
-			...base.properties,
-			total: decimalMoney,
-			tax: { anyOf: [decimalMoney, { type: "null" }] },
-		},
-		required: [
-			"kind",
-			"side",
-			"party",
-			"issuedAt",
-			"total",
-			"tax",
-			"number",
-			"category",
-			"confidence",
-		],
-		additionalProperties: false,
-	};
-}
-
 function extractionTool(): Anthropic.Tool {
 	return {
 		name: TOOL_NAME,
 		description: "Records the structured fields extracted from a financial document.",
 		strict: true,
-		input_schema: toolInputSchema(),
-	};
-}
-
-interface DecimalMoneyInput {
-	readonly amount: string;
-	readonly currency: string;
-}
-
-function isDecimalMoneyInput(value: unknown): value is DecimalMoneyInput {
-	if (typeof value !== "object" || value === null) return false;
-	const candidate = value as Record<string, unknown>;
-	return typeof candidate.amount === "string" && typeof candidate.currency === "string";
-}
-
-function toMoney(value: unknown, field: string): Money | null {
-	if (value === null) return null;
-	if (!isDecimalMoneyInput(value)) {
-		throw new Error(`extraction field "${field}" is not a decimal amount and currency`);
-	}
-	return moneyFromDecimal(value.amount, currency(value.currency));
-}
-
-function normalizeToolInput(rawInput: unknown): unknown {
-	if (typeof rawInput !== "object" || rawInput === null) {
-		throw new Error("record_extraction input is not an object");
-	}
-	const raw = rawInput as Record<string, unknown>;
-	return {
-		...raw,
-		total: toMoney(raw.total, "total"),
-		tax: toMoney(raw.tax, "tax"),
+		input_schema: decimalExtractionJsonSchema() as Anthropic.Tool.InputSchema,
 	};
 }
 
@@ -163,7 +92,7 @@ export function createClaudeExtractor(options: CreateClaudeExtractorOptions): Ex
 				});
 				const toolUse = findToolUse(response);
 				try {
-					return parseExtraction(normalizeToolInput(toolUse.input), "claude");
+					return extractionFromDecimalInput(toolUse.input, "claude");
 				} catch (error) {
 					lastError = error;
 					messages.push({ role: "assistant", content: response.content });
