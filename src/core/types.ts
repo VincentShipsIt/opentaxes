@@ -26,6 +26,11 @@ export interface Transaction {
 	readonly bookedAt: IsoDate;
 	readonly direction: Direction;
 	readonly amount: Money;
+	/**
+	 * What the counterparty billed, when the bank converted it. A card charge of 88.88 EUR
+	 * debits 103.24 USD; the vendor's invoice says 88.88 EUR, so matching must see both.
+	 */
+	readonly original?: Money;
 	readonly counterparty: string;
 	/** payment reference or description, "" when the bank gives none */
 	readonly reference: string;
