@@ -1,0 +1,63 @@
+{
+	"name": "@vincentshipsit/opentaxes",
+	"version": "0.1.0",
+	"description": "Agent-first bookkeeping collector: pull bank transactions, invoices and receipts, reconcile them, and hand your accountant a clean monthly folder.",
+	"license": "MIT",
+	"type": "module",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/VincentShipsIt/opentaxes.git"
+	},
+	"homepage": "https://github.com/VincentShipsIt/opentaxes",
+	"bugs": {
+		"url": "https://github.com/VincentShipsIt/opentaxes/issues"
+	},
+	"keywords": [
+		"bookkeeping",
+		"invoices",
+		"receipts",
+		"wise",
+		"gmail",
+		"mcp",
+		"agent",
+		"accounting"
+	],
+	"bin": {
+		"opentaxes": "dist/cli/index.js"
+	},
+	"files": [
+		"dist",
+		"skills",
+		"README.md",
+		"LICENSE"
+	],
+	"publishConfig": {
+		"access": "public"
+	},
+	"engines": {
+		"node": ">=22"
+	},
+	"packageManager": "bun@1.3.14",
+	"scripts": {
+		"build": "bun build src/cli/index.ts src/mcp/index.ts --outdir dist --target node --format esm --splitting --root src",
+		"check": "biome check .",
+		"check:fix": "biome check --write .",
+		"typecheck": "tsc --noEmit",
+		"test": "bun test",
+		"deps:update": "bun update --latest",
+		"opentaxes": "bun run src/cli/index.ts"
+	},
+	"dependencies": {
+		"@anthropic-ai/sdk": "0.123.0",
+		"@modelcontextprotocol/sdk": "1.30.0",
+		"commander": "15.0.0",
+		"googleapis": "178.0.0",
+		"stripe": "22.6.1",
+		"zod": "4.5.4"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.5.12",
+		"@types/bun": "1.4.0",
+		"typescript": "7.0.2"
+	}
+}
