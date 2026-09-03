@@ -114,7 +114,11 @@ export function createGmailSource(options: GmailSourceOptions): DocumentSource {
 	return {
 		name: "gmail",
 		async fetchDocuments(month: Month): Promise<readonly FetchedDocument[]> {
-			const q = buildGmailQuery({ month, senders: options.senders, query: options.query });
+			const q = buildGmailQuery({
+				month,
+				...(options.senders !== undefined ? { senders: options.senders } : {}),
+				...(options.query !== undefined ? { query: options.query } : {}),
+			});
 			const ids = await listAllMessageIds(options.gmail, q);
 			const documents: FetchedDocument[] = [];
 

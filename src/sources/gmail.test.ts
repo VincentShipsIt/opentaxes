@@ -7,6 +7,7 @@ import {
 	noAttachmentMessage,
 	tinyAttachmentMessage,
 } from "../../fixtures/gmail/messages.ts";
+import { toIsoDate } from "../core/dates.ts";
 import type { Month } from "../core/types.ts";
 import {
 	buildGmailQuery,
@@ -169,7 +170,7 @@ describe("createGmailSource", () => {
 			attachmentId: "att-invoice-2",
 			from: "receipts@shop.example",
 			subject: "Receipt attached",
-			receivedAt: "2024-02-01",
+			receivedAt: toIsoDate("2024-02-01"),
 		});
 	});
 
