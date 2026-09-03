@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { chmod, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { type Auth, google } from "googleapis";
 
@@ -93,7 +93,10 @@ async function readTokens(tokenPath: string): Promise<Auth.Credentials> {
 }
 
 async function persistTokens(tokenPath: string, tokens: Auth.Credentials): Promise<void> {
+	// The mode passed to writeFile only applies when it creates the file; chmod enforces
+	// 0600 on every persist, including a refresh rewriting a file that already existed.
 	await writeFile(tokenPath, `${JSON.stringify(tokens, null, "\t")}\n`, { mode: 0o600 });
+	await chmod(tokenPath, 0o600);
 }
 
 function listen(server: ReturnType<typeof createServer>): Promise<void> {
