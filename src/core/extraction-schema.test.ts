@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { parseIsoDate } from "./dates.ts";
 import { extractionJsonSchema, parseExtraction } from "./extraction-schema.ts";
+import { currency } from "./money.ts";
 
 function validRaw() {
 	return {
@@ -22,9 +24,9 @@ describe("parseExtraction", () => {
 			kind: "invoice",
 			side: "expense",
 			party: "Acme Vendor",
-			issuedAt: "2026-01-15",
-			total: { minor: 12345, currency: "USD" },
-			tax: { minor: 2345, currency: "USD" },
+			issuedAt: parseIsoDate("2026-01-15"),
+			total: { minor: 12345, currency: currency("USD") },
+			tax: { minor: 2345, currency: currency("USD") },
 			number: "INV-1",
 			category: "software",
 			confidence: 0.9,
