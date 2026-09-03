@@ -1,20 +1,30 @@
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import * as nodePath from "node:path";
 import type { PublishInput, PublishResult, Sink } from "../core/registry.ts";
 import type { DocumentId } from "../core/types.ts";
-import { documentFolder, monthPath, reconciliationCsv } from "./layout.ts";
+import {
+	documentFolder,
+	monthPath,
+	orphanDocumentRecords,
+	reconciliationCsv,
+	unmatchedDocumentsCsv,
+} from "./layout.ts";
 
 export interface FolderSinkOptions {
 	readonly path: string;
 }
 
 const CSV_FILENAME = "reconciliation.csv";
+const UNMATCHED_FILENAME = "unmatched-documents.csv";
 const LEDGER_FILENAME = "ledger.json";
 
 /**
  * Writes `<path>/<YYYY>/<MM>/<folder>/<filename>` for every document, plus a reconciliation
- * CSV and a ledger.json copy in the month folder. Idempotent: unchanged documents are skipped
- * by byte length, and the CSV/JSON are only rewritten when their content actually differs.
+ * CSV, an unmatched-documents CSV (only written while at least one orphan exists), and a
+ * ledger.json copy in the month folder. A document is unchanged when the sha256 of the file
+ * already on disk matches its (content-addressed) document id; the CSVs/JSON are rewritten
+ * only when their content actually differs.
  */
 export function createFolderSink(options: FolderSinkOptions): Sink {
 	return {
@@ -34,12 +44,12 @@ export function createFolderSink(options: FolderSinkOptions): Sink {
 				const dir = nodePath.join(monthDir, folder);
 				await mkdir(dir, { recursive: true });
 				const target = nodePath.join(dir, filename);
-				const bytes = await input.readDocument(document);
-				const existingSize = await fileSize(target);
-				if (existingSize === bytes.length) {
+				const existingHash = await fileHash(target);
+				if (existingHash === document.id) {
 					unchanged += 1;
 					continue;
 				}
+				const bytes = await input.readDocument(document);
 				await writeFile(target, bytes);
 				created += 1;
 			}
@@ -47,22 +57,40 @@ export function createFolderSink(options: FolderSinkOptions): Sink {
 			await mkdir(monthDir, { recursive: true });
 			const csv = reconciliationCsv(input.ledger, input.filenames);
 			const csvChanged = await writeIfChanged(nodePath.join(monthDir, CSV_FILENAME), csv);
+
+			const orphans = orphanDocumentRecords(input.ledger, input.filenames);
+			const unmatchedChanged =
+				orphans.length > 0
+					? await writeIfChanged(
+							nodePath.join(monthDir, UNMATCHED_FILENAME),
+							unmatchedDocumentsCsv(input.ledger, input.filenames)
+						)
+					: null;
+
 			const json = `${JSON.stringify(input.ledger, null, "\t")}\n`;
 			const jsonChanged = await writeIfChanged(nodePath.join(monthDir, LEDGER_FILENAME), json);
 
 			return {
 				sink: "folder",
-				created: created + (csvChanged ? 1 : 0) + (jsonChanged ? 1 : 0),
-				unchanged: unchanged + (csvChanged ? 0 : 1) + (jsonChanged ? 0 : 1),
+				created:
+					created +
+					(csvChanged ? 1 : 0) +
+					(unmatchedChanged === true ? 1 : 0) +
+					(jsonChanged ? 1 : 0),
+				unchanged:
+					unchanged +
+					(csvChanged ? 0 : 1) +
+					(unmatchedChanged === false ? 1 : 0) +
+					(jsonChanged ? 0 : 1),
 			};
 		},
 	};
 }
 
-async function fileSize(target: string): Promise<number | null> {
+async function fileHash(target: string): Promise<string | null> {
 	try {
-		const info = await stat(target);
-		return info.size;
+		const data = await readFile(target);
+		return createHash("sha256").update(data).digest("hex");
 	} catch (error) {
 		if (isNotFound(error)) return null;
 		throw error;

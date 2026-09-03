@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as nodePath from "node:path";
@@ -17,10 +18,26 @@ async function withTempDir(run: (dir: string) => Promise<void>): Promise<void> {
 	}
 }
 
-function buildInput(bytesByDocId: Readonly<Record<string, Uint8Array>>): PublishInput {
-	const invoice = doc({ id: "d1", filename: "invoice.pdf" });
+function sha256Hex(bytes: Uint8Array): string {
+	return createHash("sha256").update(bytes).digest("hex");
+}
+
+interface BuildInputOptions {
+	readonly invoiceBytes: Uint8Array;
+	readonly statementBytes: Uint8Array;
+}
+
+/**
+ * Document ids are content-addressed: they always equal the sha256 of the bytes supplied. The
+ * bank statement document is never matched to a transaction (statements are never invoices), so
+ * every ledger built here always has at least one orphan document.
+ */
+function buildInput(options: BuildInputOptions): PublishInput {
+	const invoiceId = sha256Hex(options.invoiceBytes);
+	const statementId = sha256Hex(options.statementBytes);
+	const invoice = doc({ id: invoiceId, filename: "invoice.pdf" });
 	const statement = doc({
-		id: "d2",
+		id: statementId,
 		filename: "statement.csv",
 		origin: { kind: "statement", source: "wise", account: "multi" },
 		fetchedAt: parseIsoDate("2026-01-02"),
@@ -29,14 +46,18 @@ function buildInput(bytesByDocId: Readonly<Record<string, Uint8Array>>): Publish
 	const ledger = ledgerFixture({
 		transactions: [t],
 		documents: [invoice, statement],
-		extractions: { d1: extraction({ party: "Acme Supplies", category: "software" }) },
-		matches: [match({ transactionId: "wise:1", documentId: "d1" })],
+		extractions: { [invoiceId]: extraction({ party: "Acme Supplies", category: "software" }) },
+		matches: [match({ transactionId: "wise:1", documentId: invoiceId })],
 	});
+	const bytesById: Readonly<Record<string, Uint8Array>> = {
+		[invoiceId]: options.invoiceBytes,
+		[statementId]: options.statementBytes,
+	};
 	return {
 		ledger,
-		filenames: { d1: "invoice.pdf", d2: "statement.csv" },
+		filenames: { [invoiceId]: "invoice.pdf", [statementId]: "statement.csv" },
 		readDocument: async (document: Document) => {
-			const bytes = bytesByDocId[document.id];
+			const bytes = bytesById[document.id];
 			if (!bytes) throw new Error(`no fixture bytes for document "${document.id}"`);
 			return bytes;
 		},
@@ -44,17 +65,19 @@ function buildInput(bytesByDocId: Readonly<Record<string, Uint8Array>>): Publish
 }
 
 describe("createFolderSink", () => {
-	it("writes each document under <YYYY>/<MM>/<folder>/<filename> plus csv and json", async () => {
+	it("writes each document under <YYYY>/<MM>/<folder>/<filename> plus csv, unmatched csv, and json", async () => {
 		await withTempDir(async (dir) => {
 			const input = buildInput({
-				d1: new TextEncoder().encode("invoice-bytes"),
-				d2: new TextEncoder().encode("statement-bytes"),
+				invoiceBytes: new TextEncoder().encode("invoice-bytes"),
+				statementBytes: new TextEncoder().encode("statement-bytes"),
 			});
 			const sink = createFolderSink({ path: dir });
 
 			const result = await sink.publish(input);
 
-			expect(result).toEqual({ sink: "folder", created: 4, unchanged: 0 });
+			// invoice, statement, reconciliation.csv, unmatched-documents.csv (the statement is
+			// never matched), ledger.json
+			expect(result).toEqual({ sink: "folder", created: 5, unchanged: 0 });
 			const monthDir = nodePath.join(dir, "2026", "01");
 			expect(await readFile(nodePath.join(monthDir, "expenses", "invoice.pdf"), "utf8")).toBe(
 				"invoice-bytes"
@@ -64,6 +87,8 @@ describe("createFolderSink", () => {
 			);
 			const csv = await readFile(nodePath.join(monthDir, "reconciliation.csv"), "utf8");
 			expect(csv).toContain("invoice.pdf");
+			const unmatched = await readFile(nodePath.join(monthDir, "unmatched-documents.csv"), "utf8");
+			expect(unmatched).toBe("filename,party,issued_at\nstatement.csv,,\n");
 			const ledgerJson = await readFile(nodePath.join(monthDir, "ledger.json"), "utf8");
 			expect(JSON.parse(ledgerJson).month).toBe("2026-01");
 		});
@@ -72,39 +97,90 @@ describe("createFolderSink", () => {
 	it("is idempotent: a second identical publish creates nothing", async () => {
 		await withTempDir(async (dir) => {
 			const input = buildInput({
-				d1: new TextEncoder().encode("invoice-bytes"),
-				d2: new TextEncoder().encode("statement-bytes"),
+				invoiceBytes: new TextEncoder().encode("invoice-bytes"),
+				statementBytes: new TextEncoder().encode("statement-bytes"),
 			});
 			const sink = createFolderSink({ path: dir });
 
 			await sink.publish(input);
 			const second = await sink.publish(input);
 
-			expect(second).toEqual({ sink: "folder", created: 0, unchanged: 4 });
+			expect(second).toEqual({ sink: "folder", created: 0, unchanged: 5 });
 		});
 	});
 
-	it("rewrites a document whose bytes changed length, but leaves an identical one alone", async () => {
+	it("rewrites a document whose bytes changed but stayed the same length, leaving an identical one alone", async () => {
 		await withTempDir(async (dir) => {
 			const sink = createFolderSink({ path: dir });
 			const first = buildInput({
-				d1: new TextEncoder().encode("invoice-bytes"),
-				d2: new TextEncoder().encode("statement-bytes"),
+				invoiceBytes: new TextEncoder().encode("invoice-bytes-A"),
+				statementBytes: new TextEncoder().encode("statement-bytes"),
 			});
 			await sink.publish(first);
 
+			// same byte length as "invoice-bytes-A", different content and therefore a different
+			// content-addressed id -- a size check alone would wrongly call this unchanged
 			const second = buildInput({
-				d1: new TextEncoder().encode("invoice-bytes-but-longer"),
-				d2: new TextEncoder().encode("statement-bytes"),
+				invoiceBytes: new TextEncoder().encode("invoice-bytes-B"),
+				statementBytes: new TextEncoder().encode("statement-bytes"),
 			});
 			const result = await sink.publish(second);
 
-			// d1 rewritten (created), d2 unchanged, csv/json content identical to the first run -> unchanged
-			expect(result).toEqual({ sink: "folder", created: 1, unchanged: 3 });
+			// invoice rewritten under a new content-addressed id, and ledger.json (which embeds
+			// document ids) changes with it; the statement file, reconciliation.csv (filenames
+			// only, no ids), and unmatched-documents.csv are all byte-identical to the first run
+			expect(result).toEqual({ sink: "folder", created: 2, unchanged: 3 });
 			const monthDir = nodePath.join(dir, "2026", "01");
 			expect(await readFile(nodePath.join(monthDir, "expenses", "invoice.pdf"), "utf8")).toBe(
-				"invoice-bytes-but-longer"
+				"invoice-bytes-B"
 			);
+		});
+	});
+
+	it("writes unmatched-documents.csv only while at least one orphan document exists", async () => {
+		await withTempDir(async (dir) => {
+			const sink = createFolderSink({ path: dir });
+			const monthDir = nodePath.join(dir, "2026", "01");
+
+			const invoiceBytes = new TextEncoder().encode("invoice-bytes");
+			const invoiceId = sha256Hex(invoiceBytes);
+			const invoice = doc({ id: invoiceId, filename: "invoice.pdf" });
+			const t = txn({ id: "wise:1" });
+			const matchedInput: PublishInput = {
+				ledger: ledgerFixture({
+					transactions: [t],
+					documents: [invoice],
+					extractions: { [invoiceId]: extraction({ party: "Acme Supplies" }) },
+					matches: [match({ transactionId: "wise:1", documentId: invoiceId })],
+				}),
+				filenames: { [invoiceId]: "invoice.pdf" },
+				readDocument: async () => invoiceBytes,
+			};
+			await sink.publish(matchedInput);
+			await expect(
+				readFile(nodePath.join(monthDir, "unmatched-documents.csv"), "utf8")
+			).rejects.toThrow();
+
+			const orphanBytes = new TextEncoder().encode("orphan-bytes");
+			const orphanId = sha256Hex(orphanBytes);
+			const orphanDoc = doc({ id: orphanId, filename: "orphan.pdf" });
+			const orphanInput: PublishInput = {
+				ledger: ledgerFixture({
+					transactions: [t],
+					documents: [invoice, orphanDoc],
+					extractions: {
+						[invoiceId]: extraction({ party: "Acme Supplies" }),
+						[orphanId]: extraction({ party: "Loose Vendor" }),
+					},
+					matches: [match({ transactionId: "wise:1", documentId: invoiceId })],
+				}),
+				filenames: { [invoiceId]: "invoice.pdf", [orphanId]: "orphan.pdf" },
+				readDocument: async (document: Document) =>
+					document.id === invoiceId ? invoiceBytes : orphanBytes,
+			};
+			await sink.publish(orphanInput);
+			const unmatched = await readFile(nodePath.join(monthDir, "unmatched-documents.csv"), "utf8");
+			expect(unmatched).toBe("filename,party,issued_at\norphan.pdf,Loose Vendor,2026-01-03\n");
 		});
 	});
 });
