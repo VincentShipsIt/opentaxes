@@ -9,6 +9,11 @@ import type { Direction, Month, Transaction, TransactionId } from "../core/types
 const DEFAULT_API_URL = "https://api.transferwise.com";
 const STATEMENT_TYPE = "COMPACT";
 
+/** Card descriptions read "Card transaction of 6.80 GBP issued by Tfl.gov.uk/cp TFL TRAVEL CH". */
+const CARD_DESCRIPTION_PREFIX = /^Card transaction of\s+[\d.,]+\s+[A-Z]{3}\s+issued by\s+/i;
+/** Some transfer descriptions read "Paid to Acme Ltd" when no structured recipient is present. */
+const PAID_TO_PREFIX = /^Paid to\s+/i;
+
 export interface WiseSourceOptions {
 	readonly token: string;
 	/** Defaults to https://api.transferwise.com. Sandbox: https://api.sandbox.transferwise.tech */
@@ -46,6 +51,8 @@ const StatementTransactionSchema = z.object({
 			description: z.string().optional(),
 			paymentReference: z.string().optional(),
 			senderName: z.string().optional(),
+			/** Populated for outgoing transfers and direct debits; undocumented but present in production. */
+			recipient: z.object({ name: z.string() }).optional(),
 			merchant: z.object({ name: z.string().optional() }).optional(),
 		})
 		.optional(),
@@ -69,30 +76,86 @@ interface WiseBalance {
 	readonly currency: string;
 }
 
+interface WiseClientOptions {
+	readonly fetch: WiseFetch;
+	readonly apiUrl: string;
+	readonly token: string;
+	/** PEM private key path for the SCA one-time-token signature; undefined when SCA isn't configured. */
+	readonly privateKeyPath: string | undefined;
+}
+
+interface WiseClient {
+	json<T>(schema: z.ZodType<T>, path: string): Promise<T>;
+	bytes(path: string): Promise<Uint8Array>;
+}
+
+/**
+ * Wraps fetch, auth, base URL and the SCA retry into one client so every request only needs a
+ * path. Wise challenges some statement requests with Strong Customer Authentication: a 403
+ * carries the one-time-token in `x-2fa-approval`; the retry signs it with the account's
+ * registered private key and resends the same header plus `X-Signature`.
+ */
+function createWiseClient(options: WiseClientOptions): WiseClient {
+	async function request(path: string): Promise<Response> {
+		const url = `${options.apiUrl}${path}`;
+		const first = await options.fetch(url, {
+			headers: { Authorization: `Bearer ${options.token}` },
+		});
+		if (first.status !== 403) return first;
+
+		const approval = first.headers.get("x-2fa-approval");
+		if (!approval) return first;
+
+		if (!options.privateKeyPath) {
+			throw new Error(
+				"Wise requires Strong Customer Authentication for this request. Set WISE_PRIVATE_KEY_PATH to a PEM private key and upload its matching public key under Wise Settings > API tokens > add SCA public key."
+			);
+		}
+
+		const privateKey = await loadPrivateKey(options.privateKeyPath);
+		const signature = signOneTimeToken(approval, privateKey);
+		return options.fetch(url, {
+			headers: {
+				Authorization: `Bearer ${options.token}`,
+				"x-2fa-approval": approval,
+				"X-Signature": signature,
+			},
+		});
+	}
+
+	return {
+		async json<T>(schema: z.ZodType<T>, path: string): Promise<T> {
+			const response = await request(path);
+			if (!response.ok) {
+				throw new Error(`Wise API error ${response.status}: ${await readErrorMessage(response)}`);
+			}
+			return schema.parse(await response.json());
+		},
+		async bytes(path: string): Promise<Uint8Array> {
+			const response = await request(path);
+			if (!response.ok) {
+				throw new Error(`Wise API error ${response.status}: ${await readErrorMessage(response)}`);
+			}
+			return new Uint8Array(await response.arrayBuffer());
+		},
+	};
+}
+
 export function createWiseSource(options: WiseSourceOptions): TransactionSource & DocumentSource {
-	const apiUrl = options.apiUrl ?? DEFAULT_API_URL;
-	const fetchImpl = options.fetch ?? fetch;
-	const { token, privateKeyPath, profileId, currencies } = options;
+	const client = createWiseClient({
+		fetch: options.fetch ?? fetch,
+		apiUrl: options.apiUrl ?? DEFAULT_API_URL,
+		token: options.token,
+		privateKeyPath: options.privateKeyPath,
+	});
+	const { profileId, currencies } = options;
 
 	async function balancesForMonth(): Promise<{
 		readonly profileId: string;
 		readonly balances: readonly WiseBalance[];
 	}> {
-		const resolvedProfileId = await resolveProfileId(
-			fetchImpl,
-			apiUrl,
-			token,
-			privateKeyPath,
-			profileId
-		);
-		const balances = await listBalances(
-			fetchImpl,
-			apiUrl,
-			token,
-			privateKeyPath,
-			resolvedProfileId,
-			currencies
-		);
+		const resolvedProfileId = await resolveProfileId(client, profileId);
+		const balances = await listBalances(client, resolvedProfileId, currencies);
 		return { profileId: resolvedProfileId, balances };
 	}
 
@@ -104,21 +167,8 @@ export function createWiseSource(options: WiseSourceOptions): TransactionSource 
 			const seen = new Set<string>();
 			const transactions: Transaction[] = [];
 			for (const balance of balances) {
-				const url = statementUrl(
-					apiUrl,
-					resolvedProfileId,
-					balance.id,
-					balance.currency,
-					month,
-					"json"
-				);
-				const statement = await wiseRequestJson(
-					StatementSchema,
-					fetchImpl,
-					url,
-					token,
-					privateKeyPath
-				);
+				const path = statementPath(resolvedProfileId, balance.id, balance.currency, month, "json");
+				const statement = await client.json(StatementSchema, path);
 				for (const entry of statement.transactions) {
 					const id = `wise:${entry.referenceNumber}` as TransactionId;
 					if (seen.has(id)) continue;
@@ -133,15 +183,8 @@ export function createWiseSource(options: WiseSourceOptions): TransactionSource 
 			const { profileId: resolvedProfileId, balances } = await balancesForMonth();
 			const documents: FetchedDocument[] = [];
 			for (const balance of balances) {
-				const url = statementUrl(
-					apiUrl,
-					resolvedProfileId,
-					balance.id,
-					balance.currency,
-					month,
-					"pdf"
-				);
-				const bytes = await wiseRequestBytes(fetchImpl, url, token, privateKeyPath);
+				const path = statementPath(resolvedProfileId, balance.id, balance.currency, month, "pdf");
+				const bytes = await client.bytes(path);
 				documents.push(buildStatementDocument(month, balance.currency, bytes));
 			}
 			return documents;
@@ -150,20 +193,11 @@ export function createWiseSource(options: WiseSourceOptions): TransactionSource 
 }
 
 async function resolveProfileId(
-	fetchImpl: WiseFetch,
-	apiUrl: string,
-	token: string,
-	privateKeyPath: string | undefined,
+	client: WiseClient,
 	profileId: string | undefined
 ): Promise<string> {
 	if (profileId) return profileId;
-	const profiles = await wiseRequestJson(
-		z.array(ProfileSchema),
-		fetchImpl,
-		`${apiUrl}/v2/profiles`,
-		token,
-		privateKeyPath
-	);
+	const profiles = await client.json(z.array(ProfileSchema), "/v2/profiles");
 	const business = profiles.find((profile) => profile.type === "business");
 	if (!business) {
 		throw new Error(
@@ -174,19 +208,13 @@ async function resolveProfileId(
 }
 
 async function listBalances(
-	fetchImpl: WiseFetch,
-	apiUrl: string,
-	token: string,
-	privateKeyPath: string | undefined,
+	client: WiseClient,
 	profileId: string,
 	currencies: readonly string[] | undefined
 ): Promise<readonly WiseBalance[]> {
-	const balances = await wiseRequestJson(
+	const balances = await client.json(
 		z.array(BalanceSchema),
-		fetchImpl,
-		`${apiUrl}/v4/profiles/${profileId}/balances?types=STANDARD`,
-		token,
-		privateKeyPath
+		`/v4/profiles/${profileId}/balances?types=STANDARD`
 	);
 	const wanted = currencies?.map((code) => code.toUpperCase());
 	return balances
@@ -194,8 +222,7 @@ async function listBalances(
 		.map((balance) => ({ id: String(balance.id), currency: balance.currency.toUpperCase() }));
 }
 
-function statementUrl(
-	apiUrl: string,
+function statementPath(
 	profileId: string,
 	balanceId: string,
 	currencyCode: string,
@@ -209,7 +236,16 @@ function statementUrl(
 		intervalEnd: `${end}T23:59:59.999Z`,
 		type: STATEMENT_TYPE,
 	});
-	return `${apiUrl}/v1/profiles/${profileId}/balance-statements/${balanceId}/statement.${format}?${params.toString()}`;
+	return `/v1/profiles/${profileId}/balance-statements/${balanceId}/statement.${format}?${params.toString()}`;
+}
+
+/**
+ * Strips the known Wise description prefixes so what remains is just who the money moved
+ * with. Only used once merchant, recipient and sender fields are all absent.
+ */
+function counterpartyFromDescription(description: string | undefined): string {
+	if (!description) return "";
+	return description.replace(CARD_DESCRIPTION_PREFIX, "").replace(PAID_TO_PREFIX, "").trim();
 }
 
 function mapTransaction(
@@ -219,8 +255,12 @@ function mapTransaction(
 ): Transaction {
 	const code = currency(entry.amount.currency ?? balanceCurrency);
 	const direction: Direction = entry.amount.value < 0 ? "out" : "in";
-	const counterparty = entry.details?.merchant?.name ?? entry.details?.senderName ?? "";
-	const reference = entry.details?.description ?? "";
+	const counterparty =
+		entry.details?.merchant?.name ??
+		entry.details?.recipient?.name ??
+		entry.details?.senderName ??
+		counterpartyFromDescription(entry.details?.description);
+	const reference = entry.details?.paymentReference ?? entry.details?.description ?? "";
 	const forAmount = entry.exchangeDetails?.forAmount;
 	const original = forAmount
 		? moneyFromDecimal(forAmount.value, currency(forAmount.currency))
@@ -261,65 +301,6 @@ function buildStatementDocument(
 			by: "source",
 		},
 	};
-}
-
-async function wiseRequestJson<T>(
-	schema: z.ZodType<T>,
-	fetchImpl: WiseFetch,
-	url: string,
-	token: string,
-	privateKeyPath: string | undefined
-): Promise<T> {
-	const response = await wiseFetch(fetchImpl, url, token, privateKeyPath);
-	if (!response.ok)
-		throw new Error(`Wise API error ${response.status}: ${await readErrorMessage(response)}`);
-	return schema.parse(await response.json());
-}
-
-async function wiseRequestBytes(
-	fetchImpl: WiseFetch,
-	url: string,
-	token: string,
-	privateKeyPath: string | undefined
-): Promise<Uint8Array> {
-	const response = await wiseFetch(fetchImpl, url, token, privateKeyPath);
-	if (!response.ok)
-		throw new Error(`Wise API error ${response.status}: ${await readErrorMessage(response)}`);
-	return new Uint8Array(await response.arrayBuffer());
-}
-
-/**
- * Wise challenges some statement requests with Strong Customer Authentication: a 403 carries
- * the one-time-token in `x-2fa-approval`; the retry signs it with the account's registered
- * private key and resends the same header plus `X-Signature`.
- */
-async function wiseFetch(
-	fetchImpl: WiseFetch,
-	url: string,
-	token: string,
-	privateKeyPath: string | undefined
-): Promise<Response> {
-	const first = await fetchImpl(url, { headers: { Authorization: `Bearer ${token}` } });
-	if (first.status !== 403) return first;
-
-	const approval = first.headers.get("x-2fa-approval");
-	if (!approval) return first;
-
-	if (!privateKeyPath) {
-		throw new Error(
-			"Wise requires Strong Customer Authentication for this request. Set WISE_PRIVATE_KEY_PATH to a PEM private key and upload its matching public key under Wise Settings > API tokens > add SCA public key."
-		);
-	}
-
-	const privateKey = await loadPrivateKey(privateKeyPath);
-	const signature = signOneTimeToken(approval, privateKey);
-	return fetchImpl(url, {
-		headers: {
-			Authorization: `Bearer ${token}`,
-			"x-2fa-approval": approval,
-			"X-Signature": signature,
-		},
-	});
 }
 
 async function loadPrivateKey(privateKeyPath: string): Promise<string> {

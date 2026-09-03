@@ -1,0 +1,38 @@
+{
+	"accountHolder": { "type": "BUSINESS" },
+	"issuer": { "name": "Wise" },
+	"transactions": [
+		{
+			"type": "DEBIT",
+			"date": "2026-08-10T11:05:00Z",
+			"referenceNumber": "TRANSFER-GBP-0001",
+			"amount": { "value": -50.0, "currency": "GBP" },
+			"totalFees": { "value": 0, "currency": "GBP" },
+			"details": {
+				"type": "TRANSFER",
+				"description": "Paid to Jane Contractor",
+				"paymentReference": "AUG-INVOICE",
+				"recipient": { "name": "Jane Contractor" }
+			},
+			"runningBalance": { "value": 150.0, "currency": "GBP" }
+		},
+		{
+			"type": "DEBIT",
+			"date": "2026-08-15T08:30:00Z",
+			"referenceNumber": "DIRECT_DEBIT-GBP-0002",
+			"amount": { "value": -12.0, "currency": "GBP" },
+			"totalFees": { "value": 0, "currency": "GBP" },
+			"details": {
+				"type": "DIRECT_DEBIT",
+				"description": "Paid to ClearBank Ltd"
+			},
+			"runningBalance": { "value": 138.0, "currency": "GBP" }
+		}
+	],
+	"endOfStatementBalance": { "value": 138.0, "currency": "GBP" },
+	"query": {
+		"intervalStart": "2026-08-01T00:00:00.000Z",
+		"intervalEnd": "2026-08-31T23:59:59.999Z",
+		"currency": "GBP"
+	}
+}

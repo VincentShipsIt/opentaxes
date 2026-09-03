@@ -21,6 +21,7 @@ const STATEMENTS: Record<string, unknown> = {
 	EUR: fixture("statement-eur.json"),
 	USD: fixture("statement-usd.json"),
 	JPY: fixture("statement-jpy.json"),
+	GBP: fixture("statement-gbp.json"),
 };
 
 const MONTH = parseMonth("2026-08");
@@ -97,7 +98,7 @@ describe("createWiseSource", () => {
 		expect(debit?.direction).toBe("out");
 		expect(debit?.amount).toEqual(money(12850, currency("EUR")));
 		expect(debit?.counterparty).toBe("Acme Supplies Ltd");
-		expect(debit?.reference).toBe("To Acme Supplies Ltd");
+		expect(debit?.reference).toBe("INV-2201");
 		expect(debit?.bookedAt).toBe(parseIsoDate("2026-08-04"));
 		expect(debit?.original).toBeUndefined();
 
@@ -136,6 +137,27 @@ describe("createWiseSource", () => {
 		expect(charge?.original).toEqual(money(8888, currency("EUR")));
 	});
 
+	test("falls back to the recipient name, then a stripped description, when merchant and sender are absent", async () => {
+		const requested: string[] = [];
+		const source = createWiseSource({
+			token: "test-token",
+			currencies: ["GBP"],
+			fetch: makeFetch(requested),
+		});
+		const transactions = await source.fetchTransactions(MONTH);
+		expect(transactions).toHaveLength(2);
+
+		const transfer = transactions.find((t) => t.id === "wise:TRANSFER-GBP-0001");
+		expect(transfer).toBeDefined();
+		expect(transfer?.counterparty).toBe("Jane Contractor");
+		expect(transfer?.reference).toBe("AUG-INVOICE");
+
+		const directDebit = transactions.find((t) => t.id === "wise:DIRECT_DEBIT-GBP-0002");
+		expect(directDebit).toBeDefined();
+		expect(directDebit?.counterparty).toBe("ClearBank Ltd");
+		expect(directDebit?.reference).toBe("Paid to ClearBank Ltd");
+	});
+
 	test("ids are stable across runs", async () => {
 		const first = await createWiseSource({
 			token: "test-token",
@@ -161,6 +183,8 @@ describe("createWiseSource", () => {
 				"wise:TRANSFER-EUR-0002",
 				"wise:CARD_TRANSACTION-77001",
 				"wise:DIRECT_DEBIT-38301689",
+				"wise:TRANSFER-GBP-0001",
+				"wise:DIRECT_DEBIT-GBP-0002",
 			].map((id) => id as TransactionId)
 		);
 	});

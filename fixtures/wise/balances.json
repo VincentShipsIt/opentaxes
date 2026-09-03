@@ -16,5 +16,11 @@
 		"currency": "JPY",
 		"type": "STANDARD",
 		"amount": { "value": 50000, "currency": "JPY" }
+	},
+	{
+		"id": 400004,
+		"currency": "GBP",
+		"type": "STANDARD",
+		"amount": { "value": 138.0, "currency": "GBP" }
 	}
 ]
