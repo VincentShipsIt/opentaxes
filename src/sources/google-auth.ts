@@ -4,7 +4,9 @@ import { type Auth, google } from "googleapis";
 
 export const GOOGLE_SCOPES = [
 	"https://www.googleapis.com/auth/gmail.readonly",
-	"https://www.googleapis.com/auth/drive.file",
+	// drive.file only reaches files this app created; publishing into a folder the user
+	// already owns (the configured folderId) needs full drive access or it 404s.
+	"https://www.googleapis.com/auth/drive",
 	"https://www.googleapis.com/auth/spreadsheets",
 ] as const;
 
