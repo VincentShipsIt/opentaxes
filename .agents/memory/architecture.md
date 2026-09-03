@@ -35,7 +35,7 @@ src/core/
   reconcile.ts  pure: reconcile(ledger, matching) -> ledger; summary(ledger) -> Summary
   registry.ts   adapter interfaces + createRegistry(config, env)
   run.ts        fetchMonth / extractMonth / reconcileMonth / publishMonth / runMonth
-src/sources/    wise.ts  gmail.ts  stripe.ts  google-auth.ts
+src/sources/    wise.ts  gmail.ts  stripe.ts  google-auth.ts  folder.ts (local <dir>/<YYYY-MM>/ receipts)
 src/sinks/      layout.ts  rows.ts  folder.ts  drive.ts  sheets.ts
 src/extractors/ claude.ts
 src/mcp/        server.ts (tools over the core)  index.ts (stdio entry)
