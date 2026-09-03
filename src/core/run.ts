@@ -1,7 +1,7 @@
 import type { Config } from "./config.ts";
 import { toIsoDate } from "./dates.ts";
 import { addDocument, setExtraction, upsertTransactions } from "./ledger.ts";
-import { documentFilename, slug } from "./naming.ts";
+import { slug, uniqueFilenames } from "./naming.ts";
 import { reconcile, summary } from "./reconcile.ts";
 import type { PublishInput, PublishResult, Registry } from "./registry.ts";
 import type { LedgerStore } from "./store.ts";
@@ -92,10 +92,7 @@ export async function reconcileMonth(month: Month, deps: RunDeps): Promise<Summa
 
 export async function publishMonth(month: Month, deps: RunDeps): Promise<PublishSummary> {
 	const ledger = await deps.store.load(month);
-	const filenames: Record<string, string> = {};
-	for (const document of Object.values(ledger.documents)) {
-		filenames[document.id] = documentFilename(document, ledger.extractions[document.id]);
-	}
+	const filenames = uniqueFilenames(Object.values(ledger.documents), ledger.extractions);
 
 	const input: PublishInput = {
 		ledger,

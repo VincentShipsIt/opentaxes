@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { parseIsoDate } from "./dates.ts";
 import { currency, money } from "./money.ts";
-import { documentFilename, extensionOf, slug } from "./naming.ts";
+import { documentFilename, extensionOf, slug, uniqueFilenames } from "./naming.ts";
 import type { Document, DocumentId, Extraction } from "./types.ts";
 
 const USD = currency("USD");
@@ -89,5 +89,44 @@ describe("documentFilename", () => {
 		const doc = document();
 		const ext = extraction();
 		expect(documentFilename(doc, ext)).toBe(documentFilename(doc, ext));
+	});
+});
+
+describe("uniqueFilenames", () => {
+	test("disambiguates two documents that would otherwise share a filename", () => {
+		const ext = extraction();
+		const first = document({
+			id: "aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11" as DocumentId,
+		});
+		const second = document({
+			id: "bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22" as DocumentId,
+		});
+
+		const filenames = uniqueFilenames([first, second], {
+			[first.id]: ext,
+			[second.id]: ext,
+		} as Record<DocumentId, Extraction>);
+
+		expect(filenames[first.id]).toBe(documentFilename(first, ext));
+		expect(filenames[second.id]).toBe("2026-08-14_acme-supplies-ltd_42.50-USD_bb22bb22.pdf");
+		expect(filenames[first.id]).not.toBe(filenames[second.id]);
+	});
+
+	test("leaves distinct filenames untouched", () => {
+		const first = document({
+			id: "aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11" as DocumentId,
+		});
+		const second = document({
+			id: "bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22" as DocumentId,
+		});
+		const extractions = {
+			[first.id]: extraction(),
+			[second.id]: extraction({ party: "Totally Different Vendor" }),
+		} as Record<DocumentId, Extraction>;
+
+		const filenames = uniqueFilenames([first, second], extractions);
+
+		expect(filenames[first.id]).toBe(documentFilename(first, extractions[first.id]));
+		expect(filenames[second.id]).toBe(documentFilename(second, extractions[second.id]));
 	});
 });

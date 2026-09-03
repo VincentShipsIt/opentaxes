@@ -1,5 +1,5 @@
 import { formatDecimal } from "./money.ts";
-import type { Document, Extraction } from "./types.ts";
+import type { Document, DocumentId, Extraction } from "./types.ts";
 
 const MIME_EXTENSIONS: Readonly<Record<string, string>> = {
 	"application/pdf": "pdf",
@@ -57,4 +57,32 @@ export function documentFilename(document: Document, extraction: Extraction | un
 	];
 	if (extraction.number) parts.push(slug(extraction.number));
 	return `${parts.join("_")}.${ext}`;
+}
+
+/** Inserts `suffix` right before the last dot-extension, or appends it when there is none. */
+function insertBeforeExtension(filename: string, suffix: string): string {
+	const dot = filename.lastIndexOf(".");
+	if (dot <= 0) return `${filename}${suffix}`;
+	return `${filename.slice(0, dot)}${suffix}${filename.slice(dot)}`;
+}
+
+/**
+ * Maps every document to a filename from documentFilename, disambiguating collisions —
+ * same vendor, day and total with no invoice number, say — by appending the first 8
+ * characters of the colliding document's id before the extension. The first document to
+ * claim a name keeps it; later ones get the suffix, so a name never lands on two documents.
+ */
+export function uniqueFilenames(
+	documents: readonly Document[],
+	extractions: Readonly<Record<DocumentId, Extraction>>
+): Record<DocumentId, string> {
+	const used = new Set<string>();
+	const filenames: Record<DocumentId, string> = {};
+	for (const document of documents) {
+		const base = documentFilename(document, extractions[document.id]);
+		const name = used.has(base) ? insertBeforeExtension(base, `_${document.id.slice(0, 8)}`) : base;
+		used.add(name);
+		filenames[document.id] = name;
+	}
+	return filenames;
 }
