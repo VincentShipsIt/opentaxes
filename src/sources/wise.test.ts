@@ -4,7 +4,9 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseMonth } from "../core/dates.ts";
+import { parseIsoDate, parseMonth } from "../core/dates.ts";
+import { currency, money } from "../core/money.ts";
+import type { TransactionId } from "../core/types.ts";
 import { createWiseSource } from "./wise.ts";
 
 const FIXTURES_DIR = fileURLToPath(new URL("../../fixtures/wise/", import.meta.url));
@@ -39,7 +41,7 @@ function headerValue(init: RequestInit | undefined, name: string): string | unde
 
 /** Routes profile/balance/statement lookups against the synthetic fixtures, recording every URL requested. */
 function makeFetch(requested: string[]): typeof fetch {
-	return (async (input: RequestInfo | URL) => {
+	return (async (input: string | URL | Request) => {
 		const url = new URL(String(input));
 		requested.push(url.toString());
 		if (url.pathname === "/v2/profiles") return jsonResponse(PROFILES);
@@ -93,16 +95,16 @@ describe("createWiseSource", () => {
 		const debit = transactions.find((t) => t.id === "wise:TRANSFER-EUR-0001");
 		expect(debit).toBeDefined();
 		expect(debit?.direction).toBe("out");
-		expect(debit?.amount).toEqual({ minor: 12850, currency: "EUR" });
+		expect(debit?.amount).toEqual(money(12850, currency("EUR")));
 		expect(debit?.counterparty).toBe("Acme Supplies Ltd");
 		expect(debit?.reference).toBe("To Acme Supplies Ltd");
-		expect(debit?.bookedAt).toBe("2026-08-04");
+		expect(debit?.bookedAt).toBe(parseIsoDate("2026-08-04"));
 		expect(debit?.original).toBeUndefined();
 
 		const credit = transactions.find((t) => t.id === "wise:TRANSFER-EUR-0002");
 		expect(credit).toBeDefined();
 		expect(credit?.direction).toBe("in");
-		expect(credit?.amount).toEqual({ minor: 64000, currency: "EUR" });
+		expect(credit?.amount).toEqual(money(64000, currency("EUR")));
 		expect(credit?.counterparty).toBe("Nova Client GmbH");
 		expect(credit?.reference).toBe("Invoice payment");
 	});
@@ -116,7 +118,7 @@ describe("createWiseSource", () => {
 		});
 		const transactions = await source.fetchTransactions(MONTH);
 		expect(transactions).toHaveLength(1);
-		expect(transactions[0]?.amount).toEqual({ minor: 5000, currency: "JPY" });
+		expect(transactions[0]?.amount).toEqual(money(5000, currency("JPY")));
 		expect(transactions[0]?.direction).toBe("out");
 	});
 
@@ -130,8 +132,8 @@ describe("createWiseSource", () => {
 		const transactions = await source.fetchTransactions(MONTH);
 		const charge = transactions.find((t) => t.id === "wise:CARD_TRANSACTION-77001");
 		expect(charge).toBeDefined();
-		expect(charge?.amount).toEqual({ minor: 10324, currency: "USD" });
-		expect(charge?.original).toEqual({ minor: 8888, currency: "EUR" });
+		expect(charge?.amount).toEqual(money(10324, currency("USD")));
+		expect(charge?.original).toEqual(money(8888, currency("EUR")));
 	});
 
 	test("ids are stable across runs", async () => {
@@ -153,12 +155,14 @@ describe("createWiseSource", () => {
 		const transactions = await source.fetchTransactions(MONTH);
 		const ids = transactions.map((t) => t.id);
 		expect(ids).toHaveLength(new Set(ids).size);
-		expect(ids).toEqual([
-			"wise:TRANSFER-EUR-0001",
-			"wise:TRANSFER-EUR-0002",
-			"wise:CARD_TRANSACTION-77001",
-			"wise:DIRECT_DEBIT-38301689",
-		]);
+		expect(ids).toEqual(
+			[
+				"wise:TRANSFER-EUR-0001",
+				"wise:TRANSFER-EUR-0002",
+				"wise:CARD_TRANSACTION-77001",
+				"wise:DIRECT_DEBIT-38301689",
+			].map((id) => id as TransactionId)
+		);
 	});
 
 	test("sends the calendar month bounds as the statement interval", async () => {
@@ -192,8 +196,8 @@ describe("createWiseSource", () => {
 			kind: "statement",
 			side: "expense",
 			party: "Wise",
-			issuedAt: "2026-08-31",
-			total: { minor: 0, currency: "EUR" },
+			issuedAt: parseIsoDate("2026-08-31"),
+			total: money(0, currency("EUR")),
 			tax: null,
 			number: null,
 			category: null,
@@ -206,7 +210,7 @@ describe("createWiseSource", () => {
 		const fetchImpl = (async () =>
 			new Response(JSON.stringify({ errors: [{ message: "token is invalid or disabled" }] }), {
 				status: 401,
-			})) as typeof fetch;
+			})) as unknown as typeof fetch;
 		const source = createWiseSource({ token: "super-secret-token", fetch: fetchImpl });
 		await expect(source.fetchTransactions(MONTH)).rejects.toThrow(
 			"Wise API error 401: token is invalid or disabled"
@@ -231,7 +235,7 @@ describe("createWiseSource", () => {
 
 		const oneTimeToken = "ott-1234567890";
 		let attempts = 0;
-		const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+		const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
 			const url = new URL(String(input));
 			if (!url.pathname.endsWith("/statement.json")) {
 				if (url.pathname === "/v2/profiles") return jsonResponse(PROFILES);
@@ -272,7 +276,7 @@ describe("createWiseSource", () => {
 	});
 
 	test("explains what to upload to Wise when no private key is configured for an SCA challenge", async () => {
-		const fetchImpl = (async (input: RequestInfo | URL) => {
+		const fetchImpl = (async (input: string | URL | Request) => {
 			const url = new URL(String(input));
 			if (url.pathname === "/v2/profiles") return jsonResponse(PROFILES);
 			if (url.pathname.endsWith("/balances")) return jsonResponse(BALANCES);
