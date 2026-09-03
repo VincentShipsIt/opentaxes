@@ -17,7 +17,7 @@ describe("parseConfig", () => {
 			matching: { threshold: 0.8 },
 		});
 		expect(config.sources.gmail?.senders).toEqual([]);
-		expect(config.sinks.sheets?.sheetName).toBe("Ledger");
+		expect(config.sinks.sheets?.sheetName).toBeUndefined();
 		expect(config.matching).toEqual({ dateWindowDays: 5, threshold: 0.8 });
 	});
 
