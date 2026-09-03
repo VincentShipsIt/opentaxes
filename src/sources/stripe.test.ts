@@ -10,7 +10,6 @@ import {
 	type StripeClient,
 	type StripeInvoiceLike,
 	type StripePayoutLike,
-	type StripeSourceLog,
 } from "./stripe.ts";
 
 const FIXTURES_DIR = fileURLToPath(new URL("../../fixtures/stripe/", import.meta.url));
@@ -61,10 +60,17 @@ function page<T>(data: readonly T[]): ListPage<T> {
 function makeStripeClient(): {
 	readonly client: StripeClient;
 	readonly balanceTransactionCalls: string[];
+	readonly invoicesListCalls: Array<{ readonly gte?: number; readonly lte?: number }>;
 } {
 	const balanceTransactionCalls: string[] = [];
+	const invoicesListCalls: Array<{ readonly gte?: number; readonly lte?: number }> = [];
 	const client: StripeClient = {
-		invoices: { list: async () => page(INVOICES) },
+		invoices: {
+			list: async (params) => {
+				if (params.created) invoicesListCalls.push(params.created);
+				return page(INVOICES);
+			},
+		},
 		payouts: { list: async () => page(PAYOUTS) },
 		balanceTransactions: {
 			list: async (params) => {
@@ -73,7 +79,7 @@ function makeStripeClient(): {
 			},
 		},
 	};
-	return { client, balanceTransactionCalls };
+	return { client, balanceTransactionCalls, invoicesListCalls };
 }
 
 function makeFetch(failingUrls: ReadonlySet<string> = new Set()): typeof fetch {
@@ -84,9 +90,9 @@ function makeFetch(failingUrls: ReadonlySet<string> = new Set()): typeof fetch {
 	}) as typeof fetch;
 }
 
-function makeLog(): { readonly log: StripeSourceLog; readonly warnings: string[] } {
+function makeLog(): { readonly log: (message: string) => void; readonly warnings: string[] } {
 	const warnings: string[] = [];
-	return { log: { warn: (message) => warnings.push(message) }, warnings };
+	return { log: (message) => warnings.push(message), warnings };
 }
 
 function invoiceIdOf(doc: FetchedDocument): string {
@@ -120,6 +126,17 @@ describe("createStripeSource", () => {
 		const docs = await source.fetchDocuments(MONTH);
 		const ids = invoiceDocs(docs).map(invoiceIdOf).sort();
 		expect(ids).toEqual(["in_1001", "in_1002", "in_1003", "in_1006", "in_1007"]);
+	});
+
+	test("bounds the invoice listing to the year before the month, not the whole account history", async () => {
+		const { client, invoicesListCalls } = makeStripeClient();
+		const source = createStripeSource({ stripe: client, fetch: makeFetch() });
+		await source.fetchDocuments(MONTH);
+
+		expect(invoicesListCalls).toHaveLength(1);
+		const created = invoicesListCalls[0];
+		expect(created?.gte).toBe(Math.floor(Date.UTC(2025, 7, 1) / 1000));
+		expect(created?.lte).toBe(Math.floor(Date.parse("2026-08-31T23:59:59.000Z") / 1000));
 	});
 
 	test("same invoice appearing twice in the API response yields one document", async () => {

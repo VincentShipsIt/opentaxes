@@ -46,7 +46,7 @@ export interface StripeClient {
 	readonly invoices: {
 		list(params: {
 			readonly status?: "paid";
-			readonly created?: { readonly lte?: number };
+			readonly created?: { readonly gte?: number; readonly lte?: number };
 			readonly limit?: number;
 			readonly starting_after?: string;
 		}): Promise<ListPage<StripeInvoiceLike>>;
@@ -67,22 +67,16 @@ export interface StripeClient {
 	};
 }
 
-export interface StripeSourceLog {
-	warn(message: string): void;
-}
-
-const noopLog: StripeSourceLog = { warn: () => {} };
-
 export interface StripeSourceOptions {
 	readonly stripe: StripeClient;
 	readonly fetch?: typeof fetch;
-	readonly log?: StripeSourceLog;
+	readonly log?: (message: string) => void;
 }
 
 export function createStripeSource(options: StripeSourceOptions): DocumentSource {
 	const { stripe } = options;
 	const fetchImpl = options.fetch ?? fetch;
-	const log = options.log ?? noopLog;
+	const log = options.log ?? (() => {});
 
 	return {
 		name: "stripe",
@@ -129,6 +123,13 @@ function endOfDayUnix(date: string): number {
 	return Math.floor(Date.parse(`${date}T23:59:59.000Z`) / 1000);
 }
 
+function oneYearBeforeUnix(date: string): number {
+	const start = new Date(`${date}T00:00:00.000Z`);
+	return Math.floor(
+		Date.UTC(start.getUTCFullYear() - 1, start.getUTCMonth(), start.getUTCDate()) / 1000
+	);
+}
+
 function isUnixInMonth(unixSeconds: number, month: Month): boolean {
 	return isInMonth(toIsoDate(new Date(unixSeconds * 1000)), month);
 }
@@ -150,7 +151,7 @@ function taxOf(invoice: StripeInvoiceLike, cur: Currency): Extraction["tax"] {
 async function fetchPaidInvoiceDocuments(
 	stripe: StripeClient,
 	fetchImpl: typeof fetch,
-	log: StripeSourceLog,
+	log: (message: string) => void,
 	month: Month
 ): Promise<readonly FetchedDocument[]> {
 	const bounds = monthBounds(month);
@@ -158,8 +159,15 @@ async function fetchPaidInvoiceDocuments(
 	// paid_at is always >= created, so filtering on created gives a safe upper bound: it can
 	// never exclude an invoice that was genuinely paid inside the target month.
 	const createdBefore = endOfDayUnix(bounds.end);
+	// An invoice paid more than a year after it was created is not something this tool
+	// reconciles, so bound the listing to the last year instead of the whole account history.
+	const createdAfter = oneYearBeforeUnix(bounds.start);
 	const all = await paginate<StripeInvoiceLike>((params) =>
-		stripe.invoices.list({ ...params, status: "paid", created: { lte: createdBefore } })
+		stripe.invoices.list({
+			...params,
+			status: "paid",
+			created: { gte: createdAfter, lte: createdBefore },
+		})
 	);
 
 	const paidInMonth = dedupeById(all).filter((invoice) => {
@@ -172,7 +180,7 @@ async function fetchPaidInvoiceDocuments(
 		const paidAt = invoice.status_transitions.paid_at;
 		if (paidAt === null) continue;
 		if (!invoice.invoice_pdf) {
-			log.warn(`stripe invoice ${invoice.id} has no invoice_pdf, skipping`);
+			log(`stripe invoice ${invoice.id} has no invoice_pdf, skipping`);
 			continue;
 		}
 
@@ -182,7 +190,7 @@ async function fetchPaidInvoiceDocuments(
 			if (!response.ok) throw new Error(`status ${response.status}`);
 			bytes = new Uint8Array(await response.arrayBuffer());
 		} catch (error) {
-			log.warn(`stripe invoice ${invoice.id} PDF download failed: ${String(error)}`);
+			log(`stripe invoice ${invoice.id} PDF download failed: ${String(error)}`);
 			continue;
 		}
 
