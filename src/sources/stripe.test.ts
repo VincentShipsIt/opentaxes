@@ -28,6 +28,32 @@ const BALANCE_TRANSACTIONS = fixture<Record<string, readonly StripeBalanceTransa
 const MONTH = parseMonth("2026-08");
 const PDF_BYTES = new TextEncoder().encode("%PDF-1.4 synthetic");
 
+/**
+ * Widened, brand-free mirrors of `Money`/`Extraction` so plain string literals can be used in
+ * `toEqual` expectations. The domain types brand `Currency`/`IsoDate`, which are subtypes of
+ * `string` and therefore assignable *into* these wider shapes (matching the `expect<T>()`
+ * pattern already used in core/dates.test.ts and core/money.test.ts).
+ */
+interface PlainMoney {
+	readonly minor: number;
+	readonly currency: string;
+}
+
+interface PlainExtraction {
+	readonly kind: string;
+	readonly side: string;
+	readonly party: string;
+	readonly issuedAt: string;
+	readonly total: PlainMoney;
+	readonly tax: PlainMoney | null;
+	readonly number: string | null;
+	readonly category: string | null;
+	readonly confidence: number;
+	readonly by: string;
+}
+
+type FetchInput = Parameters<typeof fetch>[0];
+
 function page<T>(data: readonly T[]): ListPage<T> {
 	return { data, has_more: false };
 }
@@ -51,7 +77,7 @@ function makeStripeClient(): {
 }
 
 function makeFetch(failingUrls: ReadonlySet<string> = new Set()): typeof fetch {
-	return (async (input: RequestInfo | URL) => {
+	return (async (input: FetchInput) => {
 		const url = String(input);
 		if (failingUrls.has(url)) throw new Error("network down");
 		return new Response(PDF_BYTES, { status: 200, headers: { "content-type": "application/pdf" } });
@@ -74,6 +100,17 @@ function invoiceDocs(docs: readonly FetchedDocument[]): FetchedDocument[] {
 
 function payoutStatementDocs(docs: readonly FetchedDocument[]): FetchedDocument[] {
 	return docs.filter((doc) => doc.origin.kind === "statement" && doc.origin.account === "payouts");
+}
+
+function mustGet<K, V>(map: Map<K, V>, key: K): V {
+	const value = map.get(key);
+	if (value === undefined) throw new Error(`missing key ${String(key)}`);
+	return value;
+}
+
+function extractionOf(doc: FetchedDocument) {
+	if (!doc.extraction) throw new Error("expected extraction to be present");
+	return doc.extraction;
 }
 
 describe("createStripeSource", () => {
@@ -99,10 +136,10 @@ describe("createStripeSource", () => {
 		const docs = await source.fetchDocuments(MONTH);
 		const byId = new Map(invoiceDocs(docs).map((doc) => [invoiceIdOf(doc), doc]));
 
-		const acme = byId.get("in_1001");
-		expect(acme?.filename).toBe("INV-1001.pdf");
-		expect(acme?.mime).toBe("application/pdf");
-		expect(acme?.extraction).toEqual({
+		const acme = mustGet(byId, "in_1001");
+		expect(acme.filename).toBe("INV-1001.pdf");
+		expect(acme.mime).toBe("application/pdf");
+		expect<PlainExtraction>(extractionOf(acme)).toEqual({
 			kind: "invoice",
 			side: "revenue",
 			party: "Acme Corp",
@@ -115,19 +152,25 @@ describe("createStripeSource", () => {
 			by: "source",
 		});
 
-		const boundaryNoTax = byId.get("in_1002");
-		expect(boundaryNoTax?.extraction?.tax).toBeNull();
+		const boundaryNoTax = mustGet(byId, "in_1002");
+		expect(extractionOf(boundaryNoTax).tax).toBeNull();
 
-		const zeroDecimal = byId.get("in_1006");
-		expect(zeroDecimal?.filename).toBe("in_1006.pdf");
-		expect(zeroDecimal?.extraction?.party).toBe("jpy@example.test");
-		expect(zeroDecimal?.extraction?.number).toBeNull();
-		expect(zeroDecimal?.extraction?.total).toEqual({ minor: 5000, currency: "JPY" });
-		expect(zeroDecimal?.extraction?.tax).toEqual({ minor: 500, currency: "JPY" });
+		const zeroDecimal = mustGet(byId, "in_1006");
+		expect(zeroDecimal.filename).toBe("in_1006.pdf");
+		expect(extractionOf(zeroDecimal).party).toBe("jpy@example.test");
+		expect(extractionOf(zeroDecimal).number).toBeNull();
+		expect<PlainMoney>(extractionOf(zeroDecimal).total).toEqual({ minor: 5000, currency: "JPY" });
+		expect<PlainMoney | null>(extractionOf(zeroDecimal).tax).toEqual({
+			minor: 500,
+			currency: "JPY",
+		});
 
-		const fallbackToId = byId.get("in_1007");
-		expect(fallbackToId?.extraction?.party).toBe("cus_fallback1");
-		expect(fallbackToId?.extraction?.tax).toEqual({ minor: 0, currency: "USD" });
+		const fallbackToId = mustGet(byId, "in_1007");
+		expect(extractionOf(fallbackToId).party).toBe("cus_fallback1");
+		expect<PlainMoney | null>(extractionOf(fallbackToId).tax).toEqual({
+			minor: 0,
+			currency: "USD",
+		});
 	});
 
 	test("isolates a single invoice PDF download failure without failing the whole fetch", async () => {
@@ -150,12 +193,13 @@ describe("createStripeSource", () => {
 		const docs = await source.fetchDocuments(MONTH);
 
 		const usdStatement = payoutStatementDocs(docs).find(
-			(doc) => doc.extraction?.total.currency === "USD"
+			(doc) => extractionOf(doc).total.currency === "USD"
 		);
-		expect(usdStatement).toBeDefined();
-		expect(usdStatement?.filename).toBe(`stripe-payouts-${MONTH}.csv`);
-		expect(usdStatement?.mime).toBe("text/csv");
-		expect(usdStatement?.extraction).toEqual({
+		if (!usdStatement) throw new Error("expected a USD payout statement");
+
+		expect(usdStatement.filename).toBe(`stripe-payouts-${MONTH}.csv`);
+		expect(usdStatement.mime).toBe("text/csv");
+		expect<PlainExtraction>(extractionOf(usdStatement)).toEqual({
 			kind: "statement",
 			side: "revenue",
 			party: "Stripe",
@@ -168,7 +212,7 @@ describe("createStripeSource", () => {
 			by: "source",
 		});
 
-		const csv = new TextDecoder().decode(usdStatement?.bytes);
+		const csv = new TextDecoder().decode(usdStatement.bytes);
 		const lines = csv.trim().split("\n");
 		expect(lines[0]).toBe("payout id,arrival date,currency,gross,fees,net,transaction count");
 		expect(lines[1]).toBe("po_usd_1,2026-08-15,USD,150.00,4.50,145.50,2");
@@ -182,11 +226,12 @@ describe("createStripeSource", () => {
 
 		const statements = payoutStatementDocs(docs);
 		expect(statements).toHaveLength(2);
-		const currencies = statements.map((doc) => doc.extraction?.total.currency).sort();
-		expect(currencies).toEqual(["EUR", "USD"]);
+		const currencies = statements.map((doc) => extractionOf(doc).total.currency).sort();
+		expect<string[]>(currencies).toEqual(["EUR", "USD"]);
 
-		const eurStatement = statements.find((doc) => doc.extraction?.total.currency === "EUR");
-		expect(eurStatement?.extraction?.total).toEqual({ minor: 7800, currency: "EUR" });
+		const eurStatement = statements.find((doc) => extractionOf(doc).total.currency === "EUR");
+		if (!eurStatement) throw new Error("expected a EUR payout statement");
+		expect<PlainMoney>(extractionOf(eurStatement).total).toEqual({ minor: 7800, currency: "EUR" });
 
 		// the payout arriving outside the month must never have its transactions queried
 		expect(balanceTransactionCalls).not.toContain("po_out_of_month");
