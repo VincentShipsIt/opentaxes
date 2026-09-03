@@ -1,0 +1,26 @@
+[
+	{
+		"id": 400001,
+		"currency": "EUR",
+		"type": "STANDARD",
+		"amount": { "value": 1523.44, "currency": "EUR" }
+	},
+	{
+		"id": 400002,
+		"currency": "USD",
+		"type": "STANDARD",
+		"amount": { "value": 87.1, "currency": "USD" }
+	},
+	{
+		"id": 400003,
+		"currency": "JPY",
+		"type": "STANDARD",
+		"amount": { "value": 50000, "currency": "JPY" }
+	},
+	{
+		"id": 400004,
+		"currency": "GBP",
+		"type": "STANDARD",
+		"amount": { "value": 138.0, "currency": "GBP" }
+	}
+]

@@ -1,0 +1,32 @@
+{
+	"transactions": [
+		{
+			"type": "DEBIT",
+			"date": "2026-08-09T18:05:00Z",
+			"referenceNumber": "CARD_TRANSACTION-77001",
+			"amount": { "value": -103.24, "currency": "USD" },
+			"details": {
+				"type": "CARD",
+				"description": "Card transaction of 88.88 EUR issued by Notion Labs Inc",
+				"merchant": { "name": "Notion Labs Inc" }
+			},
+			"exchangeDetails": {
+				"forAmount": { "value": 88.88, "currency": "EUR" },
+				"rate": 1.1615
+			},
+			"runningBalance": { "value": 51.2, "currency": "USD" }
+		},
+		{
+			"type": "DEBIT",
+			"date": "2026-08-01T00:00:00Z",
+			"referenceNumber": "TRANSFER-EUR-0001",
+			"amount": { "value": -12.0, "currency": "USD" },
+			"details": {
+				"type": "TRANSFER",
+				"description": "Duplicate reference across balances, must not double count",
+				"merchant": { "name": "Should Not Appear Twice" }
+			},
+			"runningBalance": { "value": 154.44, "currency": "USD" }
+		}
+	]
+}
