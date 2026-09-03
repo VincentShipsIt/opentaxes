@@ -1,109 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { access, mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { z } from "zod";
-import { parseIsoDate, parseMonth } from "./dates.ts";
 import { emptyLedger } from "./ledger.ts";
-import { currency, money } from "./money.ts";
 import { extensionOf } from "./naming.ts";
+import { LedgerSchema } from "./schemas.ts";
 import type { DocumentId, Ledger, Month } from "./types.ts";
-
-function transformOrIssue<In, Out>(parse: (value: In) => Out) {
-	return (value: In, ctx: z.RefinementCtx<In>): Out => {
-		try {
-			return parse(value);
-		} catch (error) {
-			ctx.addIssue({
-				code: "custom",
-				message: error instanceof Error ? error.message : String(error),
-			});
-			return z.NEVER;
-		}
-	};
-}
-
-const monthSchema = z.string().transform(transformOrIssue(parseMonth));
-const isoDateSchema = z.string().transform(transformOrIssue(parseIsoDate));
-
-const moneySchema = z
-	.object({ minor: z.number(), currency: z.string() })
-	.transform(
-		transformOrIssue((value: { minor: number; currency: string }) =>
-			money(value.minor, currency(value.currency))
-		)
-	);
-
-const documentOriginSchema = z.discriminatedUnion("kind", [
-	z.object({
-		kind: z.literal("gmail"),
-		messageId: z.string(),
-		attachmentId: z.string(),
-		from: z.string(),
-		subject: z.string(),
-		receivedAt: isoDateSchema,
-	}),
-	z.object({ kind: z.literal("stripe"), invoiceId: z.string() }),
-	z.object({ kind: z.literal("statement"), source: z.string(), account: z.string() }),
-	z.object({ kind: z.literal("file"), path: z.string() }),
-]);
-
-const transactionSchema = z.object({
-	id: z.string(),
-	source: z.string(),
-	bookedAt: isoDateSchema,
-	direction: z.enum(["in", "out"]),
-	amount: moneySchema,
-	counterparty: z.string(),
-	reference: z.string(),
-});
-
-const documentSchema = z.object({
-	id: z.string(),
-	origin: documentOriginSchema,
-	filename: z.string(),
-	mime: z.string(),
-	fetchedAt: isoDateSchema,
-});
-
-const extractionSchema = z.object({
-	kind: z.enum(["invoice", "receipt", "credit_note", "statement", "other"]),
-	side: z.enum(["expense", "revenue"]),
-	party: z.string(),
-	issuedAt: isoDateSchema,
-	total: moneySchema,
-	tax: moneySchema.nullable(),
-	number: z.string().nullable(),
-	category: z.string().nullable(),
-	confidence: z.number().min(0).max(1),
-	by: z.enum(["source", "claude", "agent"]),
-});
-
-const matchSchema = z.object({
-	transactionId: z.string(),
-	documentId: z.string(),
-	rule: z.enum(["manual", "amount-date", "amount-date-party"]),
-	score: z.number().min(0).max(1),
-});
-
-const decisionSchema = z.discriminatedUnion("kind", [
-	z.object({ kind: z.literal("personal") }),
-	z.object({ kind: z.literal("no-document"), reason: z.string() }),
-	z.object({ kind: z.literal("duplicate"), of: z.string() }),
-	z.object({ kind: z.literal("ignore"), reason: z.string() }),
-]);
-
-/**
- * Structural validation only: ids are opaque strings here, not re-derived,
- * since a saved ledger's ids were already validated when they were created.
- */
-const ledgerSchema = z.object({
-	month: monthSchema,
-	transactions: z.record(z.string(), transactionSchema),
-	documents: z.record(z.string(), documentSchema),
-	extractions: z.record(z.string(), extractionSchema),
-	matches: z.array(matchSchema),
-	decisions: z.record(z.string(), decisionSchema),
-});
 
 const LEDGER_FILENAME = "ledger.json";
 const DOCUMENTS_DIRNAME = "documents";
@@ -131,7 +32,7 @@ export class LedgerStore {
 			if (isNotFound(error)) return emptyLedger(month);
 			throw error;
 		}
-		return ledgerSchema.parse(JSON.parse(raw)) as unknown as Ledger;
+		return LedgerSchema.parse(JSON.parse(raw)) as unknown as Ledger;
 	}
 
 	async save(ledger: Ledger): Promise<void> {

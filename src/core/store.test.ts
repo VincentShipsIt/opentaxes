@@ -27,7 +27,8 @@ const transaction: Transaction = {
 	source: "wise",
 	bookedAt: parseIsoDate("2026-08-05"),
 	direction: "out",
-	amount: money(4250, currency("USD")),
+	amount: money(10324, currency("USD")),
+	original: money(8888, currency("EUR")),
 	counterparty: "Acme Supplies",
 	reference: "INV-9",
 };
@@ -39,12 +40,13 @@ describe("LedgerStore", () => {
 		expect(ledger).toEqual(emptyLedger(MONTH));
 	});
 
-	test("save then load round-trips the ledger", async () => {
+	test("save then load round-trips the ledger, including a transaction's original amount", async () => {
 		const store = new LedgerStore(await tempDir());
 		const ledger = upsertTransactions(emptyLedger(MONTH), [transaction]);
 		await store.save(ledger);
 		const loaded = await store.load(MONTH);
 		expect(loaded).toEqual(ledger);
+		expect(loaded.transactions[transaction.id]?.original).toEqual(transaction.original);
 	});
 
 	test("load fails loudly on a corrupt ledger file", async () => {
