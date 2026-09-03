@@ -1,0 +1,39 @@
+{
+	"accountHolder": { "type": "BUSINESS" },
+	"issuer": { "name": "Wise" },
+	"transactions": [
+		{
+			"type": "DEBIT",
+			"date": "2026-08-04T09:12:00Z",
+			"referenceNumber": "TRANSFER-EUR-0001",
+			"amount": { "value": -128.5, "currency": "EUR" },
+			"totalFees": { "value": 0, "currency": "EUR" },
+			"details": {
+				"type": "TRANSFER",
+				"description": "To Acme Supplies Ltd",
+				"paymentReference": "INV-2201",
+				"merchant": { "name": "Acme Supplies Ltd" }
+			},
+			"runningBalance": { "value": 1394.94, "currency": "EUR" }
+		},
+		{
+			"type": "CREDIT",
+			"date": "2026-08-12T15:40:00Z",
+			"referenceNumber": "TRANSFER-EUR-0002",
+			"amount": { "value": 640.0, "currency": "EUR" },
+			"totalFees": { "value": 0, "currency": "EUR" },
+			"details": {
+				"type": "DEPOSIT",
+				"description": "Invoice payment",
+				"senderName": "Nova Client GmbH"
+			},
+			"runningBalance": { "value": 2034.94, "currency": "EUR" }
+		}
+	],
+	"endOfStatementBalance": { "value": 2034.94, "currency": "EUR" },
+	"query": {
+		"intervalStart": "2026-08-01T00:00:00.000Z",
+		"intervalEnd": "2026-08-31T23:59:59.999Z",
+		"currency": "EUR"
+	}
+}

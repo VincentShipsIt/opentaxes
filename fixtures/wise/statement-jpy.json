@@ -1,0 +1,16 @@
+{
+	"transactions": [
+		{
+			"type": "DEBIT",
+			"date": "2026-08-20T03:00:00Z",
+			"referenceNumber": "DIRECT_DEBIT-38301689",
+			"amount": { "value": -5000, "currency": "JPY" },
+			"details": {
+				"type": "TRANSFER",
+				"description": "Office supplies",
+				"merchant": { "name": "Tokyo Stationery KK" }
+			},
+			"runningBalance": { "value": 45000, "currency": "JPY" }
+		}
+	]
+}
