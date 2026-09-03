@@ -225,6 +225,20 @@ describe("summary", () => {
 		expect(result.orphanDocuments).toEqual([]);
 	});
 
+	test("bank statements never count as orphan documents", () => {
+		const statement = document({
+			origin: { kind: "statement", source: "wise", account: "multi" },
+		});
+		const statementExt = extraction({ kind: "statement", party: "Some Bank" });
+		const ledger = ledgerWith([], [[statement, statementExt]]);
+
+		const result = summary(reconcile(ledger, DEFAULT_MATCHING));
+
+		expect(result.orphanDocuments).toEqual([]);
+		expect(result.unextractedDocuments).toEqual([]);
+		expect(result.documents).toBe(1);
+	});
+
 	test("lists unextracted documents regardless of decisions", () => {
 		const doc = document();
 		const ledger = ledgerWith([], [[doc, undefined]]);
