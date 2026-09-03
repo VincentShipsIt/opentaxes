@@ -21,7 +21,8 @@ function transformOrIssue<In, Out>(parse: (value: In) => Out) {
 	};
 }
 
-const moneySchema = z
+/** Validates and parses a `{ minor, currency }` pair into a branded Money. */
+export const moneySchema = z
 	.object({ minor: z.number(), currency: z.string() })
 	.transform(
 		transformOrIssue((value: { minor: number; currency: string }) =>
@@ -29,7 +30,8 @@ const moneySchema = z
 		)
 	);
 
-const isoDateSchema = z.string().transform(transformOrIssue(parseIsoDate));
+/** Validates and parses an ISO date string into a branded IsoDate. */
+export const isoDateSchema = z.string().transform(transformOrIssue(parseIsoDate));
 
 /**
  * Validates the shape an `Extraction` carries once money and dates have already been
