@@ -7,6 +7,7 @@ import { createClaudeExtractor } from "../extractors/claude.ts";
 import { createDriveSink } from "../sinks/drive.ts";
 import { createFolderSink } from "../sinks/folder.ts";
 import { createSheetsSink } from "../sinks/sheets.ts";
+import { createFolderSource } from "../sources/folder.ts";
 import type { GmailClient } from "../sources/gmail.ts";
 import { createGmailSource } from "../sources/gmail.ts";
 import { createGoogleAuth, type GoogleAuth } from "../sources/google-auth.ts";
@@ -67,8 +68,8 @@ export interface Registry {
 	readonly sinks: readonly Sink[];
 }
 
-const DEFAULT_STATE_DIR = ".opentaxes";
-const GOOGLE_TOKEN_FILENAME = "google-token.json";
+export const DEFAULT_STATE_DIR = ".opentaxes";
+export const GOOGLE_TOKEN_FILENAME = "google-token.json";
 
 interface TableEntry<T> {
 	readonly when: boolean;
@@ -223,6 +224,10 @@ export function createRegistry(
 					stripe: new Stripe(env.STRIPE_SECRET_KEY as string),
 					log,
 				}),
+		},
+		{
+			when: config.sources.folder !== undefined,
+			build: () => createFolderSource({ dir: (config.sources.folder as { dir: string }).dir }),
 		},
 	]);
 

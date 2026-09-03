@@ -52,6 +52,15 @@ describe("createRegistry", () => {
 		expect(names(registry.transactionSources)).toEqual(["wise", "wise"]);
 	});
 
+	it("adds a folder document source when sources.folder is configured", () => {
+		const registry = createRegistry(
+			parseConfig({ sources: { folder: { dir: "/tmp/does-not-matter" } } }),
+			parseEnv({}),
+			MONTH
+		);
+		expect(names(registry.documentSources)).toEqual(["folder"]);
+	});
+
 	it("adds a Stripe document source when STRIPE_SECRET_KEY is set", () => {
 		const registry = createRegistry(
 			parseConfig({}),
