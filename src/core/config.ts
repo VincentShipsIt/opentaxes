@@ -21,6 +21,7 @@ export const ConfigSchema = z.object({
 				.optional(),
 			stripe: z.object({}).optional(),
 			wiseCsv: z.object({ dir: z.string() }).optional(),
+			folder: z.object({ dir: z.string() }).optional(),
 		})
 		.prefault({}),
 	sinks: z
