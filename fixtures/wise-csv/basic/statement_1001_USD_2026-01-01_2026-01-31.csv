@@ -1,0 +1,6 @@
+TransferWise ID,Date,Date Time,Amount,Currency,Description,Payment Reference,Running Balance,Exchange From,Exchange To,Exchange Rate,Payer Name,Payee Name,Payee Account Number,Merchant,Card Last Four Digits,Card Holder Full Name,Attachment,Note,Total fees,Exchange To Amount,Transaction Type,Transaction Details Type
+CARD_TRANSACTION-4821093756,05-01-2026,05-01-2026 10:15:00.000,-97.50,USD,Card transaction of 84.15 EUR issued by Acme Mail Co ACMEMAIL.IO,,5000.00,USD,EUR,0.860000,,,,Acme Mail Co ACMEMAIL.IO,4821,Jordan Cole,,,0.00,84.15,DEBIT,CARD
+DIRECT_DEBIT-70045213,10-01-2026,10-01-2026 08:00:00.000,-45.00,USD,Paid to Acme Hosting Ltd,INV-2026-004,4896.76,,,,,Acme Hosting Ltd,,,,,,,0.00,,DEBIT,DIRECT_DEBIT
+TRANSFER-987654,15-01-2026,15-01-2026 14:30:00.000,500.00,USD,Received from Jane Client,,5396.76,,,,Jane Client,,,,,,,,0.00,,CREDIT,TRANSFER
+CARD_TRANSACTION-1122334455,20-01-2026,20-01-2026 09:05:00.000,-12.50,USD,Card transaction of 12.50 USD issued by Notion Labs Inc,,5384.26,USD,USD,1.000000,,,,Notion Labs Inc,1234,Jordan Cole,,,0.00,12.50,DEBIT,CARD
+CONVERSION-556677,25-01-2026,25-01-2026 12:00:00.000,-200.00,USD,Converted 200.00 USD to 172.00 EUR,,5184.26,USD,EUR,0.860000,,,,,,,,,0.00,172.00,DEBIT,CONVERSION

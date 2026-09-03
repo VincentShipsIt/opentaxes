@@ -1,0 +1,3 @@
+TransferWise ID,Date,Date Time,Amount,Currency,Description,Payment Reference,Running Balance,Exchange From,Exchange To,Exchange Rate,Payer Name,Payee Name,Payee Account Number,Merchant,Card Last Four Digits,Card Holder Full Name,Attachment,Note,Total fees,Exchange To Amount,Transaction Type,Transaction Details Type
+CARD_TRANSACTION-2233445566,28-01-2026,28-01-2026 16:45:00.000,-9.99,USD,Card transaction of 9.99 USD issued by Linear Inc,,990.01,,,,,,,Linear Inc,,,,,0.00,,DEBIT,CARD
+CARD_TRANSACTION-3344556677,02-02-2026,02-02-2026 11:20:00.000,-19.99,USD,Card transaction of 19.99 USD issued by Figma Inc,,970.02,,,,,,,Figma Inc,,,,,0.00,,DEBIT,CARD
