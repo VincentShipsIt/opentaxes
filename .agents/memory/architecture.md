@@ -37,7 +37,7 @@ src/core/
   run.ts        fetchMonth / extractMonth / reconcileMonth / publishMonth / runMonth
 src/sources/    wise.ts  gmail.ts  stripe.ts  google-auth.ts  folder.ts (local <dir>/<YYYY-MM>/ receipts)
 src/sinks/      layout.ts  rows.ts  folder.ts  drive.ts  sheets.ts
-src/extractors/ claude.ts
+src/extractors/ claude.ts  claude-cli.ts (Claude Code CLI, no API key)  schema.ts (shared decimal-money extraction schema)
 src/mcp/        server.ts (tools over the core)  index.ts (stdio entry)
 src/cli/        index.ts (commander)
 skills/opentaxes/SKILL.md   the agent playbook installed with `npx skills add`

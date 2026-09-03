@@ -43,6 +43,13 @@ export const ConfigSchema = z.object({
 			threshold: z.number().min(0).max(1).default(0.6),
 		})
 		.prefault({}),
+	extractor: z
+		.object({
+			kind: z.enum(["claude-api", "claude-cli"]).optional(),
+			model: z.string().optional(),
+			configDir: z.string().optional(),
+		})
+		.optional(),
 	/** party slug -> accounting category, applied when the extractor leaves category null */
 	categories: z.record(z.string(), z.string()).default({}),
 });
