@@ -1,10 +1,17 @@
 import type { drive_v3 } from "googleapis";
 import type { PublishInput, PublishResult, Sink } from "../core/registry.ts";
 import type { DocumentId } from "../core/types.ts";
-import { documentFolder, monthPath, reconciliationCsv } from "./layout.ts";
+import {
+	documentFolder,
+	monthPath,
+	orphanDocumentRecords,
+	reconciliationCsv,
+	unmatchedDocumentsCsv,
+} from "./layout.ts";
 
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 const CSV_FILENAME = "reconciliation.csv";
+const UNMATCHED_FILENAME = "unmatched-documents.csv";
 
 export interface DriveSinkOptions {
 	readonly drive: drive_v3.Drive;
@@ -13,8 +20,9 @@ export interface DriveSinkOptions {
 
 /**
  * Mirrors the folder sink's layout inside a Drive folder: <folderId>/<YYYY>/<MM>/<folder>/<file>,
- * with `reconciliation.csv` kept in the month folder. Idempotent by name: every folder and file
- * is looked up before it is created, and the CSV is updated in place rather than duplicated.
+ * with `reconciliation.csv` (and, while at least one orphan document exists, `unmatched-documents.csv`)
+ * kept in the month folder. Idempotent by name: every folder and file is looked up before it is
+ * created, and each CSV is updated in place rather than duplicated.
  */
 export function createDriveSink(options: DriveSinkOptions): Sink {
 	const { drive, folderId } = options;
@@ -71,6 +79,26 @@ export function createDriveSink(options: DriveSinkOptions): Sink {
 					fields: "id",
 				});
 				created += 1;
+			}
+
+			const orphans = orphanDocumentRecords(input.ledger, input.filenames);
+			if (orphans.length > 0) {
+				const unmatched = unmatchedDocumentsCsv(input.ledger, input.filenames);
+				const existingUnmatchedId = await findFileByName(drive, UNMATCHED_FILENAME, monthFolderId);
+				if (existingUnmatchedId) {
+					await drive.files.update({
+						fileId: existingUnmatchedId,
+						media: { mimeType: "text/csv", body: unmatched },
+					});
+					unchanged += 1;
+				} else {
+					await drive.files.create({
+						requestBody: { name: UNMATCHED_FILENAME, parents: [monthFolderId] },
+						media: { mimeType: "text/csv", body: unmatched },
+						fields: "id",
+					});
+					created += 1;
+				}
 			}
 
 			return { sink: "drive", created, unchanged };

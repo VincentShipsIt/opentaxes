@@ -80,6 +80,26 @@ function buildInput(): PublishInput {
 	};
 }
 
+function buildInputWithOrphan(): PublishInput {
+	const invoice = doc({ id: "d1", filename: "invoice.pdf" });
+	const orphan = doc({ id: "d2", filename: "orphan.pdf" });
+	const t = txn({ id: "wise:1" });
+	const ledger = ledgerFixture({
+		transactions: [t],
+		documents: [invoice, orphan],
+		extractions: {
+			d1: extraction({ party: "Acme Supplies", category: "software" }),
+			d2: extraction({ party: "Loose Vendor" }),
+		},
+		matches: [match({ transactionId: "wise:1", documentId: "d1" })],
+	});
+	return {
+		ledger,
+		filenames: { d1: "invoice.pdf", d2: "orphan.pdf" },
+		readDocument: async (_document: Document) => new TextEncoder().encode("invoice-bytes"),
+	};
+}
+
 describe("createDriveSink", () => {
 	it("creates the year/month/category folder chain and uploads the document plus csv", async () => {
 		const { drive, nodes } = createFakeDrive();
@@ -124,5 +144,29 @@ describe("createDriveSink", () => {
 		await sink.publish(buildInput());
 
 		expect(calls.update).toBe(1);
+	});
+
+	it("does not upload unmatched-documents.csv while there are no orphan documents", async () => {
+		const { drive, nodes } = createFakeDrive();
+		const sink = createDriveSink({ drive, folderId: "root-folder" });
+
+		await sink.publish(buildInput());
+
+		expect(nodes.find((n) => n.name === "unmatched-documents.csv")).toBeUndefined();
+	});
+
+	it("uploads unmatched-documents.csv once an orphan document exists, and updates it in place", async () => {
+		const { drive, nodes, calls } = createFakeDrive();
+		const sink = createDriveSink({ drive, folderId: "root-folder" });
+
+		await sink.publish(buildInputWithOrphan());
+		const unmatched = nodes.find((n) => n.name === "unmatched-documents.csv");
+		expect(unmatched).toBeDefined();
+		const createCallsAfterFirst = calls.create;
+
+		await sink.publish(buildInputWithOrphan());
+
+		expect(nodes.filter((n) => n.name === "unmatched-documents.csv")).toHaveLength(1);
+		expect(calls.create).toBe(createCallsAfterFirst);
 	});
 });

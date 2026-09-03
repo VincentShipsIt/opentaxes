@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { parseIsoDate, parseMonth } from "../core/dates.ts";
 import { currency, money } from "../core/money.ts";
 import type { DocumentId } from "../core/types.ts";
-import { documentFolder, monthPath, reconciliationCsv } from "./layout.ts";
+import { documentFolder, monthPath, reconciliationCsv, unmatchedDocumentsCsv } from "./layout.ts";
 import { doc, extraction, ledgerFixture, match, txn } from "./test-fixtures.ts";
 
 describe("documentFolder", () => {
@@ -156,23 +156,31 @@ describe("reconciliationCsv", () => {
 		expect(csv.split("\n")[1]).toContain('"Acme, Inc."');
 	});
 
-	it("lists unmatched documents in a trailing orphan section", () => {
+	it("no longer carries an orphan-documents trailer", () => {
+		const orphan = doc({ id: "orphan1", filename: "orphan1.pdf" });
+		const ledger = ledgerFixture({ documents: [orphan] });
+		const csv = reconciliationCsv(ledger, { orphan1: "orphan1.pdf" });
+		expect(csv).not.toContain("orphan_documents");
+		expect(csv).not.toContain("orphan1.pdf");
+	});
+});
+
+describe("unmatchedDocumentsCsv", () => {
+	it("lists unmatched documents with their filename, party, and issued date", () => {
 		const orphan = doc({ id: "orphan1", filename: "orphan1.pdf" });
 		const ledger = ledgerFixture({
 			documents: [orphan],
 			extractions: { orphan1: extraction({ party: "Loose Vendor" }) },
 		});
-		const csv = reconciliationCsv(ledger, { orphan1: "2026-01-01_loose-vendor_0.00-USD.pdf" });
-		const lines = csv.split("\n");
-		const orphanHeaderIndex = lines.indexOf("orphan_documents");
-		expect(orphanHeaderIndex).toBeGreaterThan(-1);
-		expect(lines[orphanHeaderIndex + 1]).toBe("filename,party,issued_at");
-		expect(lines[orphanHeaderIndex + 2]).toBe(
-			"2026-01-01_loose-vendor_0.00-USD.pdf,Loose Vendor,2026-01-03"
-		);
+		const csv = unmatchedDocumentsCsv(ledger, {
+			orphan1: "2026-01-01_loose-vendor_0.00-USD.pdf",
+		});
+		const [header, row] = csv.split("\n");
+		expect(header).toBe("filename,party,issued_at");
+		expect(row).toBe("2026-01-01_loose-vendor_0.00-USD.pdf,Loose Vendor,2026-01-03");
 	});
 
-	it("excludes matched documents from the orphan section", () => {
+	it("excludes matched documents", () => {
 		const t = txn({ id: "wise:7" });
 		const d = doc({ id: "d7" });
 		const ledger = ledgerFixture({
@@ -181,10 +189,7 @@ describe("reconciliationCsv", () => {
 			extractions: { d7: extraction() },
 			matches: [match({ transactionId: "wise:7", documentId: "d7" })],
 		});
-		const csv = reconciliationCsv(ledger, { d7: "d7.pdf" });
-		expect(csv).not.toContain("d7.pdf\n");
-		const lines = csv.split("\n");
-		const orphanHeaderIndex = lines.indexOf("orphan_documents");
-		expect(lines[orphanHeaderIndex + 2] ?? "").toBe("");
+		const csv = unmatchedDocumentsCsv(ledger, { d7: "d7.pdf" });
+		expect(csv).toBe("filename,party,issued_at\n");
 	});
 });

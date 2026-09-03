@@ -185,9 +185,23 @@ export function reconciliationCsv(
 			])
 		);
 	}
-	const orphans = orphanDocumentRecords(ledger, filenames);
-	lines.push("", csvRow(["orphan_documents"]), csvRow(["filename", "party", "issued_at"]));
-	for (const orphan of orphans) {
+	return `${lines.join("\n")}\n`;
+}
+
+/** Column order for `unmatchedDocumentsCsv`. */
+export const UNMATCHED_DOCUMENTS_COLUMNS = ["filename", "party", "issued_at"] as const;
+
+/**
+ * A CSV of documents no `Match` points at yet, kept separate from `reconciliationCsv` — a file
+ * with two differently-shaped tables in it opens badly in spreadsheet software. Callers should
+ * write this file only when `orphanDocumentRecords` is non-empty.
+ */
+export function unmatchedDocumentsCsv(
+	ledger: Ledger,
+	filenames: Readonly<Record<string, string>>
+): string {
+	const lines: string[] = [csvRow(UNMATCHED_DOCUMENTS_COLUMNS)];
+	for (const orphan of orphanDocumentRecords(ledger, filenames)) {
 		lines.push(csvRow([orphan.filename, orphan.party, orphan.issuedAt]));
 	}
 	return `${lines.join("\n")}\n`;
