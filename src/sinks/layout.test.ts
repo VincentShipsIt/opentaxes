@@ -99,7 +99,7 @@ describe("reconciliationCsv", () => {
 		const ledger = ledgerFixture({ transactions: [t] });
 		const csv = reconciliationCsv(ledger, {});
 		const row = csv.split("\n")[1];
-		expect(row.split(",")[7]).toBe("payout ref");
+		expect(row?.split(",")[7]).toBe("payout ref");
 	});
 
 	it("maps every decision kind to its status word", () => {
@@ -125,7 +125,7 @@ describe("reconciliationCsv", () => {
 			});
 			const csv = reconciliationCsv(ledger, {});
 			const row = csv.split("\n")[1];
-			expect(row.split(",")[8]).toBe(expected);
+			expect(row?.split(",")[8]).toBe(expected);
 		}
 	});
 
