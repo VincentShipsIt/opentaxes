@@ -36,7 +36,10 @@ export interface WiseCsvSourceOptions {
 export function parseStatementFilename(filename: string): WiseCsvFileInfo | null {
 	const match = FILENAME_PATTERN.exec(filename);
 	if (!match) return null;
-	const [, balanceId, currencyCode, start, end] = match as [string, string, string, string, string];
+	const balanceId = match[1] as string;
+	const currencyCode = match[2] as string;
+	const start = match[3] as string;
+	const end = match[4] as string;
 	return {
 		balanceId,
 		currency: currency(currencyCode),
@@ -49,7 +52,9 @@ export function parseStatementFilename(filename: string): WiseCsvFileInfo | null
 export function parseWiseCsvDate(value: string): IsoDate {
 	const match = WISE_CSV_DATE.exec(value.trim());
 	if (!match) throw new Error(`invalid Wise CSV date "${value}", expected DD-MM-YYYY`);
-	const [, day, month, year] = match as [string, string, string, string];
+	const day = match[1] as string;
+	const month = match[2] as string;
+	const year = match[3] as string;
 	return parseIsoDate(`${year}-${month}-${day}`);
 }
 

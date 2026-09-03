@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { parseMonth } from "../core/dates.ts";
+import { parseIsoDate, parseMonth } from "../core/dates.ts";
 import { currency } from "../core/money.ts";
 import type { TransactionId } from "../core/types.ts";
 import {
@@ -11,14 +11,17 @@ import {
 } from "./wise-csv.ts";
 
 const FIXTURES = join(import.meta.dir, "../../fixtures/wise-csv");
+const USD = currency("USD");
+const EUR = currency("EUR");
+const wiseId = (id: string) => `wise:${id}` as TransactionId;
 
 describe("parseStatementFilename", () => {
 	test("parses balance id, currency and the statement period", () => {
 		expect(parseStatementFilename("statement_1001_USD_2026-01-01_2026-01-31.csv")).toEqual({
 			balanceId: "1001",
-			currency: currency("USD"),
-			start: "2026-01-01",
-			end: "2026-01-31",
+			currency: USD,
+			start: parseIsoDate("2026-01-01"),
+			end: parseIsoDate("2026-01-31"),
 		});
 	});
 
@@ -31,8 +34,8 @@ describe("parseStatementFilename", () => {
 
 describe("parseWiseCsvDate", () => {
 	test("reads DD-MM-YYYY, not month-first", () => {
-		expect(parseWiseCsvDate("05-01-2026")).toBe("2026-01-05");
-		expect(parseWiseCsvDate("31-12-2025")).toBe("2025-12-31");
+		expect(parseWiseCsvDate("05-01-2026")).toBe(parseIsoDate("2026-01-05"));
+		expect(parseWiseCsvDate("31-12-2025")).toBe(parseIsoDate("2025-12-31"));
 	});
 
 	test("rejects a malformed date", () => {
@@ -73,34 +76,34 @@ describe("mapWiseCsvRow", () => {
 
 	test("builds the id from the TransferWise ID verbatim", () => {
 		const transaction = mapWiseCsvRow(row({ "TransferWise ID": "CARD_TRANSACTION-42" }));
-		expect(transaction.id).toBe("wise:CARD_TRANSACTION-42");
+		expect(transaction.id).toBe(wiseId("CARD_TRANSACTION-42"));
 		expect(transaction.source).toBe("wise");
 	});
 
 	test("reads direction from the sign and drops it from the amount", () => {
 		const debit = mapWiseCsvRow(row({ Amount: "-45.00" }));
 		expect(debit.direction).toBe("out");
-		expect(debit.amount).toEqual({ minor: 4500, currency: "USD" });
+		expect(debit.amount).toEqual({ minor: 4500, currency: USD });
 
 		const credit = mapWiseCsvRow(row({ "TransferWise ID": "TRANSFER-1", Amount: "500.00" }));
 		expect(credit.direction).toBe("in");
-		expect(credit.amount).toEqual({ minor: 50000, currency: "USD" });
+		expect(credit.amount).toEqual({ minor: 50000, currency: USD });
 	});
 
 	test("sets original from Exchange To / Exchange To Amount when it differs from the balance currency", () => {
 		const transaction = mapWiseCsvRow(
 			row({
-				"TransferWise ID": "CARD_TRANSACTION-1234567890",
-				Amount: "-103.24",
-				Description: "Card transaction of 88.88 EUR issued by Resend RESEND.COM",
+				"TransferWise ID": "CARD_TRANSACTION-4821093756",
+				Amount: "-97.50",
+				Description: "Card transaction of 84.15 EUR issued by Acme Mail Co ACMEMAIL.IO",
 				"Exchange From": "USD",
 				"Exchange To": "EUR",
-				"Exchange To Amount": "88.88",
-				Merchant: "Resend RESEND.COM",
+				"Exchange To Amount": "84.15",
+				Merchant: "Acme Mail Co ACMEMAIL.IO",
 			})
 		);
-		expect(transaction.original).toEqual({ minor: 8888, currency: "EUR" });
-		expect(transaction.counterparty).toBe("Resend RESEND.COM");
+		expect(transaction.original).toEqual({ minor: 8415, currency: EUR });
+		expect(transaction.counterparty).toBe("Acme Mail Co ACMEMAIL.IO");
 	});
 
 	test("leaves original out when the exchange columns are empty", () => {
@@ -182,28 +185,30 @@ describe("createWiseCsvSource", () => {
 		const transactions = await source.fetchTransactions(parseMonth("2026-01"));
 
 		expect(transactions.map((t) => t.id)).toEqual([
-			"wise:CARD_TRANSACTION-1234567890",
-			"wise:DIRECT_DEBIT-38301689",
-			"wise:TRANSFER-987654",
-			"wise:CARD_TRANSACTION-1122334455",
-			"wise:CONVERSION-556677",
-		] as TransactionId[]);
+			wiseId("CARD_TRANSACTION-4821093756"),
+			wiseId("DIRECT_DEBIT-70045213"),
+			wiseId("TRANSFER-987654"),
+			wiseId("CARD_TRANSACTION-1122334455"),
+			wiseId("CONVERSION-556677"),
+		]);
 
-		const cardCharge = transactions.find((t) => t.id === "wise:CARD_TRANSACTION-1234567890");
-		expect(cardCharge?.original).toEqual({ minor: 8888, currency: "EUR" });
+		const cardCharge = transactions.find((t) => t.id === wiseId("CARD_TRANSACTION-4821093756"));
+		expect(cardCharge?.original).toEqual({ minor: 8415, currency: EUR });
 
-		const directDebit = transactions.find((t) => t.id === "wise:DIRECT_DEBIT-38301689");
+		const directDebit = transactions.find((t) => t.id === wiseId("DIRECT_DEBIT-70045213"));
 		expect(directDebit?.counterparty).toBe("Acme Hosting Ltd");
 		expect(directDebit?.reference).toBe("INV-2026-004");
 
-		const credit = transactions.find((t) => t.id === "wise:TRANSFER-987654");
+		const credit = transactions.find((t) => t.id === wiseId("TRANSFER-987654"));
 		expect(credit?.direction).toBe("in");
 		expect(credit?.counterparty).toBe("Jane Client");
 
-		const sameCurrencyCard = transactions.find((t) => t.id === "wise:CARD_TRANSACTION-1122334455");
+		const sameCurrencyCard = transactions.find(
+			(t) => t.id === wiseId("CARD_TRANSACTION-1122334455")
+		);
 		expect(sameCurrencyCard?.original).toBeUndefined();
 
-		const conversion = transactions.find((t) => t.id === "wise:CONVERSION-556677");
+		const conversion = transactions.find((t) => t.id === wiseId("CONVERSION-556677"));
 		expect(conversion?.counterparty).toBe("Wise");
 	});
 
@@ -223,17 +228,17 @@ describe("createWiseCsvSource", () => {
 		const source = createWiseCsvSource({ dir: join(FIXTURES, "spans-month") });
 
 		const january = await source.fetchTransactions(parseMonth("2026-01"));
-		expect(january.map((t) => t.id)).toEqual(["wise:CARD_TRANSACTION-2233445566"]);
+		expect(january.map((t) => t.id)).toEqual([wiseId("CARD_TRANSACTION-2233445566")]);
 
 		const february = await source.fetchTransactions(parseMonth("2026-02"));
-		expect(february.map((t) => t.id)).toEqual(["wise:CARD_TRANSACTION-3344556677"]);
+		expect(february.map((t) => t.id)).toEqual([wiseId("CARD_TRANSACTION-3344556677")]);
 	});
 
 	test("duplicate ids across two files collapse to one transaction", async () => {
 		const source = createWiseCsvSource({ dir: join(FIXTURES, "duplicates") });
 		const transactions = await source.fetchTransactions(parseMonth("2026-01"));
 		expect(transactions).toHaveLength(1);
-		expect(transactions[0]?.id).toBe("wise:DIRECT_DEBIT-99999999");
+		expect(transactions[0]?.id).toBe(wiseId("DIRECT_DEBIT-99999999"));
 	});
 
 	test("throws with the filename when a file can't be read", async () => {
