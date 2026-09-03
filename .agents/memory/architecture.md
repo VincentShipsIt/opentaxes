@@ -36,7 +36,7 @@ src/core/
   registry.ts   adapter interfaces + createRegistry(config, env)
   run.ts        fetchMonth / extractMonth / reconcileMonth / publishMonth / runMonth
 src/sources/    wise.ts  gmail.ts  stripe.ts  google-auth.ts
-src/sinks/      folder.ts  drive.ts  sheets.ts
+src/sinks/      layout.ts  rows.ts  folder.ts  drive.ts  sheets.ts
 src/extractors/ claude.ts
 src/mcp/        server.ts (tools over the core)  index.ts (stdio entry)
 src/cli/        index.ts (commander)
@@ -55,11 +55,17 @@ skills/opentaxes/SKILL.md   the agent playbook installed with `npx skills add`
 
 Score each transaction against each document with an extraction on the same side (`out` pairs with `expense`, `in` with `revenue`):
 
-- same currency and same minor amount, and `|bookedAt - issuedAt| <= dateWindowDays`: base 0.7, rule `amount-date`
+- same currency and same minor amount as either `transaction.amount` or `transaction.original`, and `|bookedAt - issuedAt| <= dateWindowDays`: base 0.7, rule `amount-date`. `original` is what the counterparty billed before the bank converted it (a card charge of 88.88 EUR debits 103.24 USD; the vendor invoice says 88.88 EUR).
 - plus party token overlap with `counterparty` or `reference`: up to +0.3, rule `amount-date-party`
 - different currency or amount: 0
 
 Greedy assignment by descending score, one document per transaction, above `threshold`. Manual matches are applied first and their ids removed from the pool.
+
+## Sink output
+
+Every sink renders the same rows (`rows.ts`), modelled on the ledger the user kept by hand before this tool: `id`, `date`, `bank`, `debit`, `credit`, `currency`, `original`, `original_currency`, `description`, `invoice`, `file`, `party`, `category`. The `invoice` column is the status word the accountant reads: `UPLOADED` (matched), `MISSING` (unmatched, undecided), `NOT AVAILABLE` (`no-document`), `PERSONAL`, `IGNORED`, `DUPLICATE`. Folder layout is `YYYY/MM/{expenses,revenue,bank,unsorted}` plus `reconciliation.csv` and `ledger.json`.
+
+Wise has two transaction sources sharing the name `wise` and the id scheme `wise:<referenceNumber>`: the API (`wise.ts`) and the CSV balance-statement export (`wise-csv.ts`, `sources.wiseCsv.dir`). The CSV path needs no token or SCA key and is the quickest way to run a month.
 
 ## Surfaces
 
