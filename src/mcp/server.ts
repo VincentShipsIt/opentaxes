@@ -13,6 +13,9 @@ import { DecisionSchema } from "../core/schemas.ts";
 import type { Decision, DocumentId, Ledger, Month, TransactionId } from "../core/types.ts";
 
 interface ToolTextResult {
+	// Index signature matches the SDK's CallToolResult shape (which allows arbitrary extra
+	// fields), so this narrower shape is structurally assignable to it.
+	readonly [key: string]: unknown;
 	readonly content: Array<{ readonly type: "text"; readonly text: string }>;
 	readonly isError?: boolean;
 }
