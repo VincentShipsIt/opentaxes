@@ -7,6 +7,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { parseMonth } from "../core/dates.ts";
 import { addDocument } from "../core/ledger.ts";
 import { LedgerStore } from "../core/store.ts";
+import type { DocumentId, TransactionId } from "../core/types.ts";
 import { doc, extraction, txn } from "../sinks/test-fixtures.ts";
 import { createServer } from "./server.ts";
 
@@ -120,7 +121,10 @@ describe("mcp server", () => {
 		expect(result.result).toMatchObject({ documentId: "d1" });
 
 		const saved = await store.load(RESOLVED_MONTH);
-		expect(saved.extractions.d1).toMatchObject({ party: "Acme Supplies", by: "agent" });
+		expect(saved.extractions["d1" as DocumentId]).toMatchObject({
+			party: "Acme Supplies",
+			by: "agent",
+		});
 	});
 
 	it("set_extraction rejects an extraction missing required fields", async () => {
@@ -136,7 +140,7 @@ describe("mcp server", () => {
 		expect(result.isError).toBe(true);
 
 		const saved = await store.load(RESOLVED_MONTH);
-		expect(saved.extractions.d1).toBeUndefined();
+		expect(saved.extractions["d1" as DocumentId]).toBeUndefined();
 	});
 
 	it("set_extraction rejects an unknown document id before touching the ledger", async () => {
@@ -157,7 +161,7 @@ describe("mcp server", () => {
 		let ledger = await store.load(RESOLVED_MONTH);
 		ledger = {
 			...ledger,
-			transactions: { ...ledger.transactions, t1: txn({ id: "t1" }) },
+			transactions: { ...ledger.transactions, ["t1" as TransactionId]: txn({ id: "t1" }) },
 		};
 		await store.save(ledger);
 

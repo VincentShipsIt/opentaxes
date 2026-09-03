@@ -13,7 +13,7 @@ import { DecisionSchema } from "../core/schemas.ts";
 import type { Decision, DocumentId, Ledger, Month, TransactionId } from "../core/types.ts";
 
 interface ToolTextResult {
-	readonly content: ReadonlyArray<{ readonly type: "text"; readonly text: string }>;
+	readonly content: Array<{ readonly type: "text"; readonly text: string }>;
 	readonly isError?: boolean;
 }
 
@@ -63,7 +63,7 @@ export function createServer(depsOptions: DepsOptions): McpServer {
 			description: "Pulls transactions and documents for a month from every configured source.",
 			inputSchema: { month: z.string().optional() },
 		},
-		guarded(async ({ month }: { month?: string }) => {
+		guarded(async ({ month }: { month?: string | undefined }) => {
 			const warnings: string[] = [];
 			const resolved = resolveMonth(month);
 			const result = await fetchMonth(resolved, await deps(resolved, warnings));
@@ -78,7 +78,7 @@ export function createServer(depsOptions: DepsOptions): McpServer {
 				"Extracts every document that has no extraction yet, using the configured extractor.",
 			inputSchema: { month: z.string().optional() },
 		},
-		guarded(async ({ month }: { month?: string }) => {
+		guarded(async ({ month }: { month?: string | undefined }) => {
 			const warnings: string[] = [];
 			const resolved = resolveMonth(month);
 			const result = await extractMonth(resolved, await deps(resolved, warnings));
@@ -92,7 +92,7 @@ export function createServer(depsOptions: DepsOptions): McpServer {
 			description: "Recomputes automatic matches between transactions and extracted documents.",
 			inputSchema: { month: z.string().optional() },
 		},
-		guarded(async ({ month }: { month?: string }) => {
+		guarded(async ({ month }: { month?: string | undefined }) => {
 			const warnings: string[] = [];
 			const resolved = resolveMonth(month);
 			const result = await reconcileMonth(resolved, await deps(resolved, warnings));
@@ -106,7 +106,7 @@ export function createServer(depsOptions: DepsOptions): McpServer {
 			description: "Publishes the month's ledger to every configured sink (folder, Drive, Sheets).",
 			inputSchema: { month: z.string().optional() },
 		},
-		guarded(async ({ month }: { month?: string }) => {
+		guarded(async ({ month }: { month?: string | undefined }) => {
 			const warnings: string[] = [];
 			const resolved = resolveMonth(month);
 			const result = await publishMonth(resolved, await deps(resolved, warnings));
@@ -120,7 +120,7 @@ export function createServer(depsOptions: DepsOptions): McpServer {
 			description: "Runs fetch, extract, reconcile, and publish in sequence for a month.",
 			inputSchema: { month: z.string().optional() },
 		},
-		guarded(async ({ month }: { month?: string }) => {
+		guarded(async ({ month }: { month?: string | undefined }) => {
 			const warnings: string[] = [];
 			const resolved = resolveMonth(month);
 			const result = await runMonth(resolved, await deps(resolved, warnings));
@@ -134,7 +134,7 @@ export function createServer(depsOptions: DepsOptions): McpServer {
 			description: "Lists unmatched transactions and orphan documents that still need attention.",
 			inputSchema: { month: z.string().optional() },
 		},
-		guarded(async ({ month }: { month?: string }) => {
+		guarded(async ({ month }: { month?: string | undefined }) => {
 			const warnings: string[] = [];
 			const resolved = resolveMonth(month);
 			const runDeps = await deps(resolved, warnings);
@@ -161,7 +161,7 @@ export function createServer(depsOptions: DepsOptions): McpServer {
 				status,
 			}: {
 				month: string;
-				status?: (typeof TRANSACTION_STATUSES)[number];
+				status?: (typeof TRANSACTION_STATUSES)[number] | undefined;
 			}) => {
 				const warnings: string[] = [];
 				const resolved = parseMonth(month);
@@ -192,7 +192,13 @@ export function createServer(depsOptions: DepsOptions): McpServer {
 			inputSchema: { month: z.string(), status: z.enum(DOCUMENT_STATUSES).optional() },
 		},
 		guarded(
-			async ({ month, status }: { month: string; status?: (typeof DOCUMENT_STATUSES)[number] }) => {
+			async ({
+				month,
+				status,
+			}: {
+				month: string;
+				status?: (typeof DOCUMENT_STATUSES)[number] | undefined;
+			}) => {
 				const warnings: string[] = [];
 				const resolved = parseMonth(month);
 				const runDeps = await deps(resolved, warnings);

@@ -1,19 +1,20 @@
 import { describe, expect, it } from "bun:test";
 import { CONFIG_FILENAME } from "../core/config.ts";
+import { parseMonth } from "../core/dates.ts";
 import { DEFAULT_STATE_DIR } from "../core/registry.ts";
 import { resolveConfigPath, resolveMonth, resolveStateDir } from "./deps.ts";
 
 describe("resolveMonth", () => {
 	it("defaults to last month when no option is given", () => {
-		expect(resolveMonth(undefined, new Date("2026-03-15T00:00:00Z"))).toBe("2026-02");
+		expect(resolveMonth(undefined, new Date("2026-03-15T00:00:00Z"))).toBe(parseMonth("2026-02"));
 	});
 
 	it("rolls over the year when last month is December", () => {
-		expect(resolveMonth(undefined, new Date("2026-01-10T00:00:00Z"))).toBe("2025-12");
+		expect(resolveMonth(undefined, new Date("2026-01-10T00:00:00Z"))).toBe(parseMonth("2025-12"));
 	});
 
 	it("parses an explicit YYYY-MM option", () => {
-		expect(resolveMonth("2026-06")).toBe("2026-06");
+		expect(resolveMonth("2026-06")).toBe(parseMonth("2026-06"));
 	});
 
 	it("rejects a malformed month", () => {
