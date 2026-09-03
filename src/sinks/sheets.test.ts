@@ -164,6 +164,7 @@ describe("createSheetsSink", () => {
 		});
 
 		expect(result).toEqual({ sink: "sheets", created: 1, unchanged: 0 });
-		expect(tabs.get("Ledger")).toHaveLength(2); // header + wise:2 row (wise:1 came from a different ledger)
+		// header + wise:1 (from the first publish) + wise:2 (newly appended) — wise:1 is not re-appended
+		expect(tabs.get("Ledger")).toHaveLength(3);
 	});
 });
