@@ -15,11 +15,11 @@ function names(items: readonly { readonly name: string }[]): string[] {
 }
 
 describe("createRegistry", () => {
-	it("builds nothing when config and env are both empty", () => {
+	it("builds no sources or sinks when config and env are both empty, but keeps the claude-cli extractor fallback", () => {
 		const registry = createRegistry(parseConfig({}), parseEnv({}), MONTH);
 		expect(registry.transactionSources).toEqual([]);
 		expect(registry.documentSources).toEqual([]);
-		expect(registry.extractor).toBeNull();
+		expect(registry.extractor?.name).toBe("claude-cli");
 		expect(registry.sinks).toEqual([]);
 	});
 

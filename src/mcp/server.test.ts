@@ -63,7 +63,15 @@ describe("mcp server", () => {
 		const result = jsonOf(
 			(await client.callTool({ name: "summary", arguments: { month: MONTH } })) as ToolTextResult
 		);
-		expect(result.result).toMatchObject({ transactions: 0, documents: 0, unextractedDocuments: 0 });
+		expect(result.result).toMatchObject({
+			month: MONTH,
+			transactions: 0,
+			documents: 0,
+			matched: 0,
+			unmatchedTransactions: [],
+			orphanDocuments: [],
+			unextractedDocuments: [],
+		});
 		expect(result.warnings).toEqual([]);
 	});
 
