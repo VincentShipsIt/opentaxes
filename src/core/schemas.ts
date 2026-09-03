@@ -1,34 +1,18 @@
 import { z } from "zod";
-import { parseIsoDate, parseMonth } from "./dates.ts";
-import { currency, money } from "./money.ts";
+import { parseMonth } from "./dates.ts";
+import { ExtractionSchema, isoDateSchema, moneySchema } from "./extraction-schema.ts";
 
-function transformOrIssue<In, Out>(parse: (value: In) => Out) {
-	return (value: In, ctx: z.RefinementCtx<In>): Out => {
-		try {
-			return parse(value);
-		} catch (error) {
-			ctx.addIssue({
-				code: "custom",
-				message: error instanceof Error ? error.message : String(error),
-			});
-			return z.NEVER;
-		}
-	};
-}
-
-const monthSchema = z.string().transform(transformOrIssue(parseMonth));
-
-/** Validates and parses an ISO date string into a branded IsoDate. */
-export const IsoDateSchema = z.string().transform(transformOrIssue(parseIsoDate));
-
-/** Validates and parses a `{ minor, currency }` pair into a branded Money. */
-export const MoneySchema = z
-	.object({ minor: z.number(), currency: z.string() })
-	.transform(
-		transformOrIssue((value: { minor: number; currency: string }) =>
-			money(value.minor, currency(value.currency))
-		)
-	);
+const monthSchema = z.string().transform((value: string, ctx: z.RefinementCtx) => {
+	try {
+		return parseMonth(value);
+	} catch (error) {
+		ctx.addIssue({
+			code: "custom",
+			message: error instanceof Error ? error.message : String(error),
+		});
+		return z.NEVER;
+	}
+});
 
 const documentOriginSchema = z.discriminatedUnion("kind", [
 	z.object({
@@ -37,45 +21,33 @@ const documentOriginSchema = z.discriminatedUnion("kind", [
 		attachmentId: z.string(),
 		from: z.string(),
 		subject: z.string(),
-		receivedAt: IsoDateSchema,
+		receivedAt: isoDateSchema,
 	}),
 	z.object({ kind: z.literal("stripe"), invoiceId: z.string() }),
 	z.object({ kind: z.literal("statement"), source: z.string(), account: z.string() }),
 	z.object({ kind: z.literal("file"), path: z.string() }),
 ]);
 
-const transactionSchema = z.object({
+/** Validates a Transaction as persisted to ledger.json. */
+export const TransactionSchema = z.object({
 	id: z.string(),
 	source: z.string(),
-	bookedAt: IsoDateSchema,
+	bookedAt: isoDateSchema,
 	direction: z.enum(["in", "out"]),
-	amount: MoneySchema,
+	amount: moneySchema,
 	/** What the counterparty billed before the bank's FX conversion, when it differs from `amount`. */
-	original: MoneySchema.optional(),
+	original: moneySchema.optional(),
 	counterparty: z.string(),
 	reference: z.string(),
 });
 
-const documentSchema = z.object({
+/** Validates a Document as persisted to ledger.json. */
+export const DocumentSchema = z.object({
 	id: z.string(),
 	origin: documentOriginSchema,
 	filename: z.string(),
 	mime: z.string(),
-	fetchedAt: IsoDateSchema,
-});
-
-/** Validates an Extraction, as produced by an extractor or set by hand over MCP. */
-export const ExtractionSchema = z.object({
-	kind: z.enum(["invoice", "receipt", "credit_note", "statement", "other"]),
-	side: z.enum(["expense", "revenue"]),
-	party: z.string(),
-	issuedAt: IsoDateSchema,
-	total: MoneySchema,
-	tax: MoneySchema.nullable(),
-	number: z.string().nullable(),
-	category: z.string().nullable(),
-	confidence: z.number().min(0).max(1),
-	by: z.enum(["source", "claude", "agent"]),
+	fetchedAt: isoDateSchema,
 });
 
 /** Validates a Match record. */
@@ -94,6 +66,11 @@ export const DecisionSchema = z.discriminatedUnion("kind", [
 	z.object({ kind: z.literal("ignore"), reason: z.string() }),
 ]);
 
+/** An Extraction as it is stored on a ledger, with its provenance stamped. */
+const ledgerExtractionSchema = ExtractionSchema.extend({
+	by: z.enum(["source", "claude", "agent"]),
+});
+
 /**
  * Validates an entire Ledger as persisted to ledger.json.
  *
@@ -102,9 +79,9 @@ export const DecisionSchema = z.discriminatedUnion("kind", [
  */
 export const LedgerSchema = z.object({
 	month: monthSchema,
-	transactions: z.record(z.string(), transactionSchema),
-	documents: z.record(z.string(), documentSchema),
-	extractions: z.record(z.string(), ExtractionSchema),
+	transactions: z.record(z.string(), TransactionSchema),
+	documents: z.record(z.string(), DocumentSchema),
+	extractions: z.record(z.string(), ledgerExtractionSchema),
 	matches: z.array(MatchSchema),
 	decisions: z.record(z.string(), DecisionSchema),
 });
