@@ -66,7 +66,7 @@ describe("LedgerStore", () => {
 
 		expect(second.id).toBe(first.id);
 		expect(second.path).toBe(first.path);
-		expect(first.id).toBe(createHash("sha256").update(bytes).digest("hex"));
+		expect(first.id as string).toBe(createHash("sha256").update(bytes).digest("hex"));
 	});
 
 	test("putDocument distinguishes different content", async () => {
