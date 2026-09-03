@@ -1,8 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import type { sheets_v4 } from "googleapis";
 import type { PublishInput } from "../core/registry.ts";
+import { LEDGER_HEADER, ledgerRows } from "./rows.ts";
 import { createSheetsSink } from "./sheets.ts";
 import { doc, extraction, ledgerFixture, match, txn } from "./test-fixtures.ts";
+
+const INVOICE_COLUMN = LEDGER_HEADER.indexOf("invoice");
 
 function createFakeSheets(
 	initialTabs: Readonly<Record<string, readonly (readonly unknown[])[]>> = {}
@@ -10,7 +13,7 @@ function createFakeSheets(
 	const tabs = new Map<string, unknown[][]>(
 		Object.entries(initialTabs).map(([title, rows]) => [title, rows.map((row) => [...row])])
 	);
-	const calls = { get: 0, batchUpdate: 0, valuesGet: 0, valuesUpdate: 0, valuesAppend: 0 };
+	const calls = { get: 0, batchUpdate: 0, valuesGet: 0, valuesClear: 0, valuesUpdate: 0 };
 
 	const tabTitle = (range: string) => range.split("!")[0] ?? range;
 
@@ -36,6 +39,11 @@ function createFakeSheets(
 				const rows = tabs.get(tabTitle(range)) ?? [];
 				return { data: { values: rows.length > 0 ? rows.map((row) => [...row]) : undefined } };
 			},
+			async clear({ range }: { range: string }) {
+				calls.valuesClear += 1;
+				tabs.set(tabTitle(range), []);
+				return { data: {} };
+			},
 			async update({
 				range,
 				requestBody,
@@ -44,25 +52,10 @@ function createFakeSheets(
 				requestBody: { values: unknown[][] };
 			}) {
 				calls.valuesUpdate += 1;
-				const title = tabTitle(range);
-				const rows = tabs.get(title) ?? [];
-				const header = requestBody.values[0];
-				if (header) rows[0] = [...header];
-				tabs.set(title, rows);
-				return { data: {} };
-			},
-			async append({
-				range,
-				requestBody,
-			}: {
-				range: string;
-				requestBody: { values: unknown[][] };
-			}) {
-				calls.valuesAppend += 1;
-				const title = tabTitle(range);
-				const rows = tabs.get(title) ?? [];
-				for (const row of requestBody.values) rows.push([...row]);
-				tabs.set(title, rows);
+				tabs.set(
+					tabTitle(range),
+					requestBody.values.map((row) => [...row])
+				);
 				return { data: {} };
 			},
 		},
@@ -88,7 +81,7 @@ function buildInput(): PublishInput {
 }
 
 describe("createSheetsSink", () => {
-	it("creates the sheet tab and header row when the spreadsheet has neither", async () => {
+	it("creates the sheet tab and writes the header plus rows when the spreadsheet has neither", async () => {
 		const { sheets, tabs, calls } = createFakeSheets();
 		const sink = createSheetsSink({ sheets, spreadsheetId: "sheet-1", sheetName: "Ledger" });
 
@@ -96,75 +89,74 @@ describe("createSheetsSink", () => {
 
 		expect(result).toEqual({ sink: "sheets", created: 1, unchanged: 0 });
 		expect(calls.batchUpdate).toBe(1);
+		expect(calls.valuesClear).toBe(1);
+		expect(calls.valuesUpdate).toBe(1);
 		const rows = tabs.get("Ledger") ?? [];
 		expect(rows[0]?.[0]).toBe("id");
 		expect(rows).toHaveLength(2);
 		expect(rows[1]?.[0]).toBe("wise:1");
 	});
 
-	it("leaves an existing correct header alone", async () => {
-		const { sheets, calls } = createFakeSheets({
-			Ledger: [
-				[
-					"id",
-					"date",
-					"bank",
-					"debit",
-					"credit",
-					"currency",
-					"original",
-					"original_currency",
-					"description",
-					"invoice",
-					"file",
-					"party",
-					"category",
-				],
-			],
-		});
+	it("leaves a tab alone when it already matches the ledger exactly", async () => {
+		const input = buildInput();
+		const rows = ledgerRows(input.ledger, input.filenames);
+		const { sheets, calls } = createFakeSheets({ Ledger: rows });
 		const sink = createSheetsSink({ sheets, spreadsheetId: "sheet-1", sheetName: "Ledger" });
 
-		await sink.publish(buildInput());
+		const result = await sink.publish(input);
 
-		expect(calls.valuesUpdate).toBe(0);
+		expect(result).toEqual({ sink: "sheets", created: 0, unchanged: 1 });
 		expect(calls.batchUpdate).toBe(0);
+		expect(calls.valuesClear).toBe(0);
+		expect(calls.valuesUpdate).toBe(0);
 	});
 
-	it("is idempotent: a second publish appends nothing new", async () => {
+	it("is idempotent: a second identical publish leaves the tab untouched", async () => {
 		const { sheets, calls, tabs } = createFakeSheets();
 		const sink = createSheetsSink({ sheets, spreadsheetId: "sheet-1", sheetName: "Ledger" });
 		const input = buildInput();
 
 		await sink.publish(input);
-		const appendCallsAfterFirst = calls.valuesAppend;
+		const clearCallsAfterFirst = calls.valuesClear;
+		const updateCallsAfterFirst = calls.valuesUpdate;
 		const result = await sink.publish(input);
 
 		expect(result).toEqual({ sink: "sheets", created: 0, unchanged: 1 });
-		expect(calls.valuesAppend).toBe(appendCallsAfterFirst); // no second append call
+		expect(calls.valuesClear).toBe(clearCallsAfterFirst);
+		expect(calls.valuesUpdate).toBe(updateCallsAfterFirst);
 		expect(tabs.get("Ledger")).toHaveLength(2); // header + one data row, no duplicate
 	});
 
-	it("appends only rows whose id is not already present", async () => {
+	it("regenerates the tab when an existing transaction's decision changes, without duplicating the row", async () => {
 		const { sheets, tabs } = createFakeSheets();
 		const sink = createSheetsSink({ sheets, spreadsheetId: "sheet-1", sheetName: "Ledger" });
-		await sink.publish(buildInput());
+		const t = txn({ id: "wise:1" });
 
-		const secondInvoice = doc({ id: "d2", filename: "invoice2.pdf" });
-		const secondTxn = txn({ id: "wise:2" });
+		const firstLedger = ledgerFixture({ transactions: [t] });
+		const firstResult = await sink.publish({
+			ledger: firstLedger,
+			filenames: {},
+			readDocument: async () => new TextEncoder().encode(""),
+		});
+		expect(firstResult).toEqual({ sink: "sheets", created: 1, unchanged: 0 });
+		const firstRows = tabs.get("Ledger") ?? [];
+		expect(firstRows[1]?.[INVOICE_COLUMN]).toBe("MISSING");
+
 		const secondLedger = ledgerFixture({
-			transactions: [secondTxn],
-			documents: [secondInvoice],
-			extractions: { d2: extraction({ party: "Other Vendor" }) },
-			matches: [match({ transactionId: "wise:2", documentId: "d2" })],
+			transactions: [t],
+			decisions: { "wise:1": { kind: "ignore", reason: "not a business expense" } },
 		});
-		const result = await sink.publish({
+		const secondResult = await sink.publish({
 			ledger: secondLedger,
-			filenames: { d2: "invoice2.pdf" },
-			readDocument: async () => new TextEncoder().encode("bytes"),
+			filenames: {},
+			readDocument: async () => new TextEncoder().encode(""),
 		});
 
-		expect(result).toEqual({ sink: "sheets", created: 1, unchanged: 0 });
-		// header + wise:1 (from the first publish) + wise:2 (newly appended) — wise:1 is not re-appended
-		expect(tabs.get("Ledger")).toHaveLength(3);
+		// wise:1 already existed, so it is neither newly "created" nor byte-for-byte "unchanged"
+		expect(secondResult).toEqual({ sink: "sheets", created: 0, unchanged: 0 });
+		const rows = tabs.get("Ledger") ?? [];
+		expect(rows).toHaveLength(2); // still header + one data row, no duplicate
+		expect(rows[1]?.[0]).toBe("wise:1");
+		expect(rows[1]?.[INVOICE_COLUMN]).toBe("IGNORED");
 	});
 });
