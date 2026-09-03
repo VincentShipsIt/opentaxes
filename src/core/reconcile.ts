@@ -108,7 +108,10 @@ function bestScore(
 /**
  * Recomputes automatic matches from scratch and keeps manual ones. Manual matches
  * are pulled out first and their transactions/documents removed from the pool, so
- * re-running never overrides a human decision.
+ * re-running never overrides a human decision. A transaction or document carrying a
+ * Decision (personal, duplicate, ignore, no-document) is removed from the pool the
+ * same way, so a decided-away transaction can never steal the document a real
+ * transaction needed, and vice versa.
  */
 export function reconcile(ledger: Ledger, matching: Matching): Ledger {
 	const manual = ledger.matches.filter((match) => match.rule === "manual");
@@ -116,10 +119,10 @@ export function reconcile(ledger: Ledger, matching: Matching): Ledger {
 	const manualDocumentIds = new Set(manual.map((match) => match.documentId));
 
 	const transactions = Object.values(ledger.transactions).filter(
-		(transaction) => !manualTransactionIds.has(transaction.id)
+		(transaction) => !manualTransactionIds.has(transaction.id) && !ledger.decisions[transaction.id]
 	);
 	const documents = Object.values(ledger.documents).filter(
-		(document) => !manualDocumentIds.has(document.id)
+		(document) => !manualDocumentIds.has(document.id) && !ledger.decisions[document.id]
 	);
 
 	const scored: ScoredPair[] = [];

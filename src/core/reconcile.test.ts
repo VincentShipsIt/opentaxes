@@ -193,6 +193,21 @@ describe("reconcile", () => {
 
 		expect(result.matches).toEqual([]);
 	});
+
+	test("a decided transaction cannot steal the document a real transaction needed", () => {
+		const personalTx = transaction({ counterparty: "Unrelated" });
+		const realTx = transaction({ counterparty: "Unrelated" });
+		const doc = document();
+		const ext = extraction({ party: "Some Other Name" });
+		let ledger = ledgerWith([personalTx, realTx], [[doc, ext]]);
+		ledger = setDecision(ledger, personalTx.id, { kind: "personal" });
+
+		const result = reconcile(ledger, DEFAULT_MATCHING);
+
+		expect(result.matches).toEqual([
+			{ transactionId: realTx.id, documentId: doc.id, rule: "amount-date", score: 0.7 },
+		]);
+	});
 });
 
 describe("summary", () => {
