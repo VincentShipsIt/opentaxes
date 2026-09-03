@@ -1,0 +1,6 @@
+[
+	{ "id": "po_usd_1", "currency": "usd", "arrival_date": 1786795200 },
+	{ "id": "po_usd_2", "currency": "usd", "arrival_date": 1785542400 },
+	{ "id": "po_eur_1", "currency": "eur", "arrival_date": 1788220799 },
+	{ "id": "po_out_of_month", "currency": "usd", "arrival_date": 1788220800 }
+]

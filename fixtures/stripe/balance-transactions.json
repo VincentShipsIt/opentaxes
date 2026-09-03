@@ -1,0 +1,9 @@
+{
+	"po_usd_1": [
+		{ "id": "txn_1", "amount": 10000, "fee": 300, "net": 9700 },
+		{ "id": "txn_2", "amount": 5000, "fee": 150, "net": 4850 }
+	],
+	"po_usd_2": [{ "id": "txn_3", "amount": 2000, "fee": 60, "net": 1940 }],
+	"po_eur_1": [{ "id": "txn_4", "amount": 8000, "fee": 200, "net": 7800 }],
+	"po_out_of_month": [{ "id": "txn_5", "amount": 999999, "fee": 0, "net": 999999 }]
+}
