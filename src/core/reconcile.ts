@@ -171,6 +171,7 @@ export function summary(ledger: Ledger): Summary {
 		return (
 			extraction !== undefined &&
 			extraction.kind !== "statement" &&
+			document.origin.kind !== "statement" &&
 			!matchedDocumentIds.has(document.id) &&
 			!ledger.decisions[document.id]
 		);

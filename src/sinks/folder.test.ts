@@ -29,8 +29,8 @@ interface BuildInputOptions {
 
 /**
  * Document ids are content-addressed: they always equal the sha256 of the bytes supplied. The
- * bank statement document is never matched to a transaction (statements are never invoices), so
- * every ledger built here always has at least one orphan document.
+ * bank statement document is never matched to a transaction and never listed as an orphan, so
+ * no ledger built here writes unmatched-documents.csv.
  */
 function buildInput(options: BuildInputOptions): PublishInput {
 	const invoiceId = sha256Hex(options.invoiceBytes);
@@ -65,7 +65,7 @@ function buildInput(options: BuildInputOptions): PublishInput {
 }
 
 describe("createFolderSink", () => {
-	it("writes each document under <YYYY>/<MM>/<folder>/<filename> plus csv, unmatched csv, and json", async () => {
+	it("writes each document under <YYYY>/<MM>/<folder>/<filename> plus csv and json", async () => {
 		await withTempDir(async (dir) => {
 			const input = buildInput({
 				invoiceBytes: new TextEncoder().encode("invoice-bytes"),
@@ -75,9 +75,8 @@ describe("createFolderSink", () => {
 
 			const result = await sink.publish(input);
 
-			// invoice, statement, reconciliation.csv, unmatched-documents.csv (the statement is
-			// never matched), ledger.json
-			expect(result).toEqual({ sink: "folder", created: 5, unchanged: 0 });
+			// invoice, statement, reconciliation.csv, ledger.json
+			expect(result).toEqual({ sink: "folder", created: 4, unchanged: 0 });
 			const monthDir = nodePath.join(dir, "2026", "01");
 			expect(await readFile(nodePath.join(monthDir, "expenses", "invoice.pdf"), "utf8")).toBe(
 				"invoice-bytes"
@@ -87,8 +86,9 @@ describe("createFolderSink", () => {
 			);
 			const csv = await readFile(nodePath.join(monthDir, "reconciliation.csv"), "utf8");
 			expect(csv).toContain("invoice.pdf");
-			const unmatched = await readFile(nodePath.join(monthDir, "unmatched-documents.csv"), "utf8");
-			expect(unmatched).toBe("filename,party,issued_at\nstatement.csv,,\n");
+			await expect(
+				readFile(nodePath.join(monthDir, "unmatched-documents.csv"), "utf8")
+			).rejects.toThrow();
 			const ledgerJson = await readFile(nodePath.join(monthDir, "ledger.json"), "utf8");
 			expect(JSON.parse(ledgerJson).month).toBe("2026-01");
 		});
@@ -105,7 +105,7 @@ describe("createFolderSink", () => {
 			await sink.publish(input);
 			const second = await sink.publish(input);
 
-			expect(second).toEqual({ sink: "folder", created: 0, unchanged: 5 });
+			expect(second).toEqual({ sink: "folder", created: 0, unchanged: 4 });
 		});
 	});
 
@@ -127,9 +127,9 @@ describe("createFolderSink", () => {
 			const result = await sink.publish(second);
 
 			// invoice rewritten under a new content-addressed id, and ledger.json (which embeds
-			// document ids) changes with it; the statement file, reconciliation.csv (filenames
-			// only, no ids), and unmatched-documents.csv are all byte-identical to the first run
-			expect(result).toEqual({ sink: "folder", created: 2, unchanged: 3 });
+			// document ids) changes with it; the statement file and reconciliation.csv (filenames
+			// only, no ids) are byte-identical to the first run
+			expect(result).toEqual({ sink: "folder", created: 2, unchanged: 2 });
 			const monthDir = nodePath.join(dir, "2026", "01");
 			expect(await readFile(nodePath.join(monthDir, "expenses", "invoice.pdf"), "utf8")).toBe(
 				"invoice-bytes-B"
