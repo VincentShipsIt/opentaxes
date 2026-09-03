@@ -65,6 +65,7 @@ class FakeExtractor implements Extractor {
 class FakeSink implements Sink {
 	readonly name = "fake-sink";
 	readonly calls: PublishInput[] = [];
+	readonly results: PublishResult[] = [];
 	private readonly seen = new Set<string>();
 
 	async publish(input: PublishInput): Promise<PublishResult> {
@@ -80,7 +81,9 @@ class FakeSink implements Sink {
 			if (name !== undefined) this.seen.add(name);
 			created += 1;
 		}
-		return { sink: this.name, created, unchanged };
+		const result: PublishResult = { sink: this.name, created, unchanged };
+		this.results.push(result);
+		return result;
 	}
 }
 
@@ -173,7 +176,7 @@ describe("runMonth end to end", () => {
 		expect(firstSummary.orphanDocuments).toEqual([]);
 		expect(extractor.calls).toBe(2);
 		expect(sink.calls).toHaveLength(1);
-		expect(sink.calls[0]).toMatchObject({ created: 2, unchanged: 0 });
+		expect(sink.results[0]).toMatchObject({ created: 2, unchanged: 0 });
 
 		const ledgerAfterFirst = await store.load(MONTH);
 		const acmeExtracted = Object.values(ledgerAfterFirst.extractions).find(
@@ -192,7 +195,7 @@ describe("runMonth end to end", () => {
 		expect(ledgerAfterSecond).toEqual(ledgerAfterFirst);
 		expect(extractor.calls).toBe(2);
 		expect(sink.calls).toHaveLength(2);
-		expect(sink.calls[1]).toMatchObject({ created: 0, unchanged: 2 });
+		expect(sink.results[1]).toMatchObject({ created: 0, unchanged: 2 });
 	});
 });
 

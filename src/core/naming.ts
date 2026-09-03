@@ -38,11 +38,17 @@ export function extensionOf(mime: string, filename: string): string {
 	return DEFAULT_EXTENSION;
 }
 
+/** Drops the last dot-extension, if any, so it doesn't leak into a slug. */
+function stripExtension(filename: string): string {
+	const dot = filename.lastIndexOf(".");
+	return dot > 0 ? filename.slice(0, dot) : filename;
+}
+
 export function documentFilename(document: Document, extraction: Extraction | undefined): string {
 	const ext = extensionOf(document.mime, document.filename);
 	if (!extraction) {
 		const shortSha = document.id.slice(0, 8);
-		return `unread_${shortSha}_${slug(document.filename)}.${ext}`;
+		return `unread_${shortSha}_${slug(stripExtension(document.filename))}.${ext}`;
 	}
 	const parts = [
 		extraction.issuedAt,
