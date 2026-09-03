@@ -6,14 +6,7 @@
 		"useIgnoreFile": true
 	},
 	"files": {
-		"includes": [
-			"**",
-			"!**/node_modules",
-			"!**/dist",
-			"!**/coverage",
-			"!**/.opentaxes",
-			"!**/.worktrees"
-		]
+		"includes": ["**", "!**/node_modules", "!**/dist", "!**/coverage"]
 	},
 	"formatter": {
 		"enabled": true,
