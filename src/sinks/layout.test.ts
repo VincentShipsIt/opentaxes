@@ -192,4 +192,28 @@ describe("unmatchedDocumentsCsv", () => {
 		const csv = unmatchedDocumentsCsv(ledger, { d7: "d7.pdf" });
 		expect(csv).toBe("filename,party,issued_at\n");
 	});
+
+	it("excludes bank statements even when unmatched", () => {
+		const statement = doc({
+			id: "stmt1",
+			origin: { kind: "statement", source: "wise", account: "multi" },
+		});
+		const ledger = ledgerFixture({
+			documents: [statement],
+			extractions: { stmt1: extraction({ kind: "statement", side: "expense" }) },
+		});
+		const csv = unmatchedDocumentsCsv(ledger, { stmt1: "stmt1.pdf" });
+		expect(csv).toBe("filename,party,issued_at\n");
+	});
+
+	it("excludes documents that already carry a decision", () => {
+		const orphan = doc({ id: "orphan1", filename: "orphan1.pdf" });
+		const ledger = ledgerFixture({
+			documents: [orphan],
+			extractions: { orphan1: extraction({ party: "Loose Vendor" }) },
+			decisions: { orphan1: { kind: "personal" } },
+		});
+		const csv = unmatchedDocumentsCsv(ledger, { orphan1: "orphan1.pdf" });
+		expect(csv).toBe("filename,party,issued_at\n");
+	});
 });

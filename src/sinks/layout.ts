@@ -135,7 +135,10 @@ export interface OrphanDocumentRecord {
 	readonly issuedAt: string;
 }
 
-/** Documents no `Match` points at: nothing to reconcile them against yet. */
+/**
+ * Documents no `Match` points at, and nothing tells us to stop chasing: excludes bank
+ * statements (never matched to a transaction) and any document a decision already settled.
+ */
 export function orphanDocumentRecords(
 	ledger: Ledger,
 	filenames: Readonly<Record<string, string>>
@@ -143,6 +146,8 @@ export function orphanDocumentRecords(
 	const matchedDocumentIds = new Set(ledger.matches.map((match) => match.documentId));
 	return sortedDocuments(ledger)
 		.filter((document) => !matchedDocumentIds.has(document.id))
+		.filter((document) => ledger.extractions[document.id]?.kind !== "statement")
+		.filter((document) => !ledger.decisions[document.id])
 		.map((document) => {
 			const extraction = ledger.extractions[document.id];
 			return {

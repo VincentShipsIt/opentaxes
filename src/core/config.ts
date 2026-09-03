@@ -31,7 +31,8 @@ export const ConfigSchema = z.object({
 			sheets: z
 				.object({
 					spreadsheetId: z.string(),
-					sheetName: z.string().default("Ledger"),
+					/** Defaults to the month ("2026-01") so each month lands on its own tab. */
+					sheetName: z.string().optional(),
 				})
 				.optional(),
 		})

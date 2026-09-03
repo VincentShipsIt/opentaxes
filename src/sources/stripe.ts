@@ -22,7 +22,9 @@ export interface StripeInvoiceLike {
 	readonly customer: string | { readonly id: string } | null;
 	readonly customer_name: string | null;
 	readonly customer_email: string | null;
-	readonly invoice_pdf: string | null;
+	// Optional to match the real `stripe` package's `Invoice.invoice_pdf`, so a live Stripe
+	// client satisfies this interface structurally with no cast at the registry call site.
+	readonly invoice_pdf?: string | null;
 }
 
 export interface StripePayoutLike {
