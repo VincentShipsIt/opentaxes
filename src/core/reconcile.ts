@@ -165,12 +165,16 @@ export function summary(ledger: Ledger): Summary {
 	const unmatchedTransactions = transactions.filter(
 		(transaction) => !matchedTransactionIds.has(transaction.id) && !ledger.decisions[transaction.id]
 	);
-	const orphanDocuments = documents.filter(
-		(document) =>
+	// A bank statement is never matched to a transaction, so it is never something to chase.
+	const orphanDocuments = documents.filter((document) => {
+		const extraction = ledger.extractions[document.id];
+		return (
+			extraction !== undefined &&
+			extraction.kind !== "statement" &&
 			!matchedDocumentIds.has(document.id) &&
-			!ledger.decisions[document.id] &&
-			ledger.extractions[document.id] !== undefined
-	);
+			!ledger.decisions[document.id]
+		);
+	});
 	const unextractedDocuments = documents.filter(
 		(document) => ledger.extractions[document.id] === undefined
 	);

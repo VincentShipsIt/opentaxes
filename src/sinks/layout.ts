@@ -1,4 +1,5 @@
 import { formatDecimal } from "../core/money.ts";
+import { summary } from "../core/reconcile.ts";
 import type {
 	Currency,
 	Decision,
@@ -135,19 +136,13 @@ export interface OrphanDocumentRecord {
 	readonly issuedAt: string;
 }
 
-/**
- * Documents no `Match` points at, and nothing tells us to stop chasing: excludes bank
- * statements (never matched to a transaction) and any document a decision already settled.
- */
 export function orphanDocumentRecords(
 	ledger: Ledger,
 	filenames: Readonly<Record<string, string>>
 ): readonly OrphanDocumentRecord[] {
-	const matchedDocumentIds = new Set(ledger.matches.map((match) => match.documentId));
+	const orphanIds = new Set(summary(ledger).orphanDocuments.map((document) => document.id));
 	return sortedDocuments(ledger)
-		.filter((document) => !matchedDocumentIds.has(document.id))
-		.filter((document) => ledger.extractions[document.id]?.kind !== "statement")
-		.filter((document) => !ledger.decisions[document.id])
+		.filter((document) => orphanIds.has(document.id))
 		.map((document) => {
 			const extraction = ledger.extractions[document.id];
 			return {
